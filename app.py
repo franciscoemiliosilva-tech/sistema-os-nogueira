@@ -73,15 +73,17 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     data_atual = datetime.now().strftime("%d/%m/%Y")
     
     logo_html = ""
-    for img_name in ["logo.jpg", "logo.png", "logo.jpeg"]:
-        if os.path.exists(img_name):
-            try:
-                with open(img_name, "rb") as f:
-                    b64 = base64.b64encode(f.read()).decode('utf-8')
-                    ext = img_name.split('.')[-1]
+    # Novo Sistema de Radar de Logo (Ignora maiusculas/minusculas)
+    try:
+        arquivos_locais = os.listdir('.')
+        for f in arquivos_locais:
+            if 'logo' in f.lower() and f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                with open(f, "rb") as img_file:
+                    b64 = base64.b64encode(img_file.read()).decode('utf-8')
+                    ext = f.lower().split('.')[-1]
                     logo_html = f'<img src="data:image/{ext};base64,{b64}" style="max-height: 55px; max-width: 250px; object-fit: contain;">'
                     break
-            except: pass
+    except: pass
             
     if not logo_html:
         logo_html = """<div style="font-weight: bold; font-size: 22px; color: #000;">NOGUEIRA BRINQUEDOS</div>"""
@@ -344,8 +346,13 @@ if arquivo_excel and arquivo_csv_3d:
             if "REDE" in nome_amigavel.upper() or "REDE" in categoria_peca:
                 area_rede_por_cor[cor_limpa] = area_rede_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
                 continue
+                
+            # NOVO MOTOR DE BOLINHAS (BASEADO NA PLACA DE EVA DE 2.05m)
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                area_bolinhas += ((dims[1] * dims[2]) / 10000.0)
+                modulos_x = math.ceil(dims[1] / 205.0) if dims[1] > 0 else 1
+                modulos_y = math.ceil(dims[2] / 205.0) if dims[2] > 0 else 1
+                area_snappada = (modulos_x * 2.05) * (modulos_y * 2.05)
+                area_bolinhas += area_snappada
                 cores_bolinhas.add(cor_limpa)
                 continue
 
@@ -465,7 +472,6 @@ if arquivo_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
-            # Regra estrita Nogueira: Área total * 1.5 com arredondamento padrão matemático
             total_pacotes = int(math.floor((area_bolinhas * 1.5) + 0.5))
             
             if total_pacotes == 0: total_pacotes = 1
