@@ -403,8 +403,8 @@ if arquivo_excel and arquivo_csv_3d:
         qtd_ferro_triangulo = 0; qtd_ferro_fora_padrao = 0
         
         espumas_calc = {
-            "ESPUMA CILINDRICA 20X20X60CM - P": 0,
-            "ESPUMA CILINDRICA 26X26X60CM - G": 0,
+            "ESPUMA CILINDRICA 20X20X60CM": 0,
+            "ESPUMA CILINDRICA 26X26X60CM": 0,
             "ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM": 0,
             "ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM": 0
         }
@@ -415,12 +415,11 @@ if arquivo_excel and arquivo_csv_3d:
             if cat not in relatorio: relatorio[cat] = {}
             
             # Contagem de Espumas Especiais para Lista de Compras
-            # NOVA REGRA: O padrão é P. Só será G se tiver a palavra GRANDE ou G na frente.
             if "BOXE" in nome_upper or re.search(r'\bBOX\b', nome_upper):
                 if " G" in nome_upper or "-G" in nome_upper or "GRAND" in nome_upper or " G " in nome_upper:
-                    espumas_calc["ESPUMA CILINDRICA 26X26X60CM - G"] += 1
+                    espumas_calc["ESPUMA CILINDRICA 26X26X60CM"] += 1
                 else:
-                    espumas_calc["ESPUMA CILINDRICA 20X20X60CM - P"] += 1
+                    espumas_calc["ESPUMA CILINDRICA 20X20X60CM"] += 1
                     
             if "CORCOVA" in nome_upper:
                 if "TRIANG" in nome_upper:
