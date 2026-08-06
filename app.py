@@ -381,7 +381,6 @@ if arquivo_excel and arquivo_csv_3d:
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
-            # Somatório da área de marcenaria (pisos e contenções)
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
@@ -402,35 +401,11 @@ if arquivo_excel and arquivo_csv_3d:
         qtd_ponte_105 = 0; qtd_ponte_210 = 0
         qtd_ferro_triangulo = 0; qtd_ferro_fora_padrao = 0
         
-        espumas_calc = {
-            "ESPUMA CILINDRICA 20X20X60CM": 0,
-            "ESPUMA CILINDRICA 26X26X60CM": 0,
-            "ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM": 0,
-            "ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM": 0
-        }
-
         for item in items_parsed:
             cat = item['cat']
             nome_upper = item['nome'].upper()
             if cat not in relatorio: relatorio[cat] = {}
             
-            # ---------------------------------------------------------
-            # CONTAGEM DE ESPUMAS ESPECIAIS (CORRIGIDO)
-            # Lê EXATAMENTE "SACO DE BOXE" para evitar pegar lixo
-            # Lê EXATAMENTE "TRIÂNGULO" (com acento) para evitar sumiço
-            # ---------------------------------------------------------
-            if "SACO DE BOXE" in nome_upper:
-                if "GRAND" in nome_upper or " G " in nome_upper or nome_upper.endswith(" G") or "-G" in nome_upper:
-                    espumas_calc["ESPUMA CILINDRICA 26X26X60CM"] += 1
-                else:
-                    espumas_calc["ESPUMA CILINDRICA 20X20X60CM"] += 1
-                    
-            if "CORCOVA" in nome_upper:
-                if "TRIANG" in nome_upper or "TRIÂNG" in nome_upper:
-                    espumas_calc["ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM"] += 1
-                else:
-                    espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += 1
-
             if cat not in ["TUBOS KID PLAY", "PISOS E CONTENÇÕES", "SERRALHERIA"]:
                 if "TURBILHÃO" in nome_upper: qtd_turbilhao += 1
                 
@@ -477,7 +452,6 @@ if arquivo_excel and arquivo_csv_3d:
                 if chave_marc not in relatorio["MARCENARIA"]['agregados']: relatorio["MARCENARIA"]['agregados'][chave_marc] = 0
                 relatorio["MARCENARIA"]['agregados'][chave_marc] += 1
                 
-            # Adiciona o item à aba de Impressão, caso seja adesivado/impresso
             if item.get('is_impresso'):
                 if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
                 if 'agregados' not in relatorio["IMPRESSÃO"]: relatorio["IMPRESSÃO"]['agregados'] = {}
@@ -536,7 +510,30 @@ if arquivo_excel and arquivo_csv_3d:
                 relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra][chave] = 0
             relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra][chave] += qtd
 
-        # 1. ESPUMAS E HOLOFOTES
+        # ---------------------------------------------------------
+        # ESPUMAS ESPECIAIS (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
+        # ---------------------------------------------------------
+        espumas_calc = {
+            "ESPUMA CILINDRICA 20X20X60CM": 0,
+            "ESPUMA CILINDRICA 26X26X60CM": 0,
+            "ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM": 0,
+            "ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM": 0
+        }
+        
+        if "ATIVIDADES KID PLAY" in relatorio and 'agregados' in relatorio["ATIVIDADES KID PLAY"]:
+            for chv, q in relatorio["ATIVIDADES KID PLAY"]['agregados'].items():
+                nome_k = chv[0].upper()
+                if "SACO DE BOXE" in nome_k:
+                    if "GRAND" in nome_k or " G " in nome_k or nome_k.endswith(" G"):
+                        espumas_calc["ESPUMA CILINDRICA 26X26X60CM"] += q
+                    else:
+                        espumas_calc["ESPUMA CILINDRICA 20X20X60CM"] += q
+                if "CORCOVA" in nome_k:
+                    if "TRIANG" in nome_k or "TRIÂNG" in nome_k:
+                        espumas_calc["ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM"] += q
+                    else:
+                        espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += q
+
         for esp_nome, esp_qtd in espumas_calc.items():
             if esp_qtd > 0:
                 add_compra("ESPUMAS ESPECIAIS", esp_nome, "", "", esp_qtd)
