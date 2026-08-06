@@ -88,8 +88,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
         logo_html = """<div style="font-weight: bold; font-size: 22px; color: #000;">NOGUEIRA BRINQUEDOS</div>"""
     
     is_checklist = (categoria == "CHECK LIST DE EXPEDIÇÃO")
-    is_compras = (categoria == "LISTA DE COMPRAS")
-    is_categorized = is_checklist or is_compras
     
     if is_checklist:
         header_html = """
@@ -102,7 +100,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             </tr>
         """
         td_ok = "<td></td><td></td>"
-        colspan_cat = 5
     elif categoria == "CONEXÕES DE ALUMÍNIO":
         header_html = """
             <tr>
@@ -113,8 +110,8 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             </tr>
         """
         td_ok = "<td></td>"
-        colspan_cat = 4
     else:
+        # Padrão para LISTA DE COMPRAS, IMPRESSÃO, SERRALHERIA, etc.
         header_html = """
             <tr>
                 <th>ITEM / DESCRIÇÃO</th>
@@ -124,17 +121,12 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             </tr>
         """
         td_ok = "<td></td>"
-        colspan_cat = 4
     
     linhas_tabela = ""
     total_q = 0
     
-    if is_categorized and 'agregados_por_categoria' in dados:
-        if is_checklist:
-            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
-        else:
-            ordem_cats = ["ESPUMAS ESPECIAIS", "ESTOQUE", "AMARRAÇÃO E FIXAÇÃO", "ITENS DE MONTAGEM", "PARAFUSOS"]
-            
+    if is_checklist and 'agregados_por_categoria' in dados:
+        ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
         def sort_cat(c):
             try: return ordem_cats.index(c)
             except: return 99
@@ -143,7 +135,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             itens_cat = dados['agregados_por_categoria'][cat_c]
             if not itens_cat: continue
             
-            linhas_tabela += f'<tr><td colspan="{colspan_cat}" style="background-color: #e0e0e0; font-weight: bold; text-align: center; padding: 4px; font-size: 10px;">{cat_c}</td></tr>'
+            linhas_tabela += f'<tr><td colspan="5" style="background-color: #e0e0e0; font-weight: bold; text-align: center; padding: 4px; font-size: 10px;">{cat_c}</td></tr>'
             
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
@@ -355,8 +347,13 @@ if arquivo_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                area_bolinhas += ((dims[1] * dims[2]) / 10000.0)
                 cores_bolinhas.add(cor_limpa)
+                # Filtro para ignorar as bolinhas pintadas individualmente (pequenas) e usar só o bloco principal
+                if max(dims) > 20:
+                    modulos_x = math.ceil(dims[1] / 205.0) if dims[1] > 0 else 1
+                    modulos_y = math.ceil(dims[2] / 205.0) if dims[2] > 0 else 1
+                    area_snappada = (modulos_x * 2.05) * (modulos_y * 2.05)
+                    area_bolinhas += area_snappada
                 continue
                 
             # Verifica se o item é destinado ao setor de impressão/adesivo
@@ -454,7 +451,7 @@ if arquivo_excel and arquivo_csv_3d:
                 if chave_marc not in relatorio["MARCENARIA"]['agregados']: relatorio["MARCENARIA"]['agregados'][chave_marc] = 0
                 relatorio["MARCENARIA"]['agregados'][chave_marc] += 1
                 
-            # Adiciona o item à aba de Impressão, caso seja adesivado/impresso
+            # Adicionando o item impresso/adesivado à aba de IMPRESSÃO
             if item.get('is_impresso'):
                 if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
                 if 'agregados' not in relatorio["IMPRESSÃO"]: relatorio["IMPRESSÃO"]['agregados'] = {}
@@ -501,38 +498,40 @@ if arquivo_excel and arquivo_csv_3d:
         if "ESTOQUE" not in relatorio: relatorio["ESTOQUE"] = {}
         if 'agregados' not in relatorio["ESTOQUE"]: relatorio["ESTOQUE"]['agregados'] = {}
         
-        # SISTEMA DE COMPRAS CATEGORIZADO (Com as abas cinzas de volta)
+        # LISTA DE COMPRAS: Reta, sem categorias (igual a foto que você mandou)
         if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
-        if 'agregados_por_categoria' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = {}
+        if 'agregados' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados'] = {}
         
-        def add_compra(cat_compra, nome, medida, cor, qtd):
-            if cat_compra not in relatorio["LISTA DE COMPRAS"]['agregados_por_categoria']:
-                relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra] = {}
+        def add_compra(nome, medida, cor, qtd):
             chave = (nome, medida, cor)
-            if chave not in relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra]:
-                relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra][chave] = 0
-            relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra][chave] += qtd
+            if chave not in relatorio["LISTA DE COMPRAS"]['agregados']:
+                relatorio["LISTA DE COMPRAS"]['agregados'][chave] = 0
+            relatorio["LISTA DE COMPRAS"]['agregados'][chave] += qtd
 
         # Inserindo Espumas na Lista de Compras
         for esp_nome, esp_qtd in espumas_calc.items():
             if esp_qtd > 0:
-                add_compra("ESPUMAS ESPECIAIS", esp_nome, "", "", esp_qtd)
+                add_compra(esp_nome, "", "", esp_qtd)
 
         for cor, area in area_eva_por_cor.items():
             qtd_eva = math.ceil(area / 3.065)
             relatorio["ESTOQUE"]['agregados'][("Placa(s) de EVA", "", cor)] = qtd_eva
-            add_compra("ESTOQUE", "Placa(s) de EVA", "", cor, qtd_eva)
+            add_compra("Placa(s) de EVA", "", cor, qtd_eva)
             
         total_fardos_rede = 0
         for cor, area in area_rede_por_cor.items():
             fardos = math.ceil(area / 86.25)
             relatorio["ESTOQUE"]['agregados'][("Fardo(s) de Rede", "", cor)] = fardos
-            add_compra("ESTOQUE", "Fardo(s) de Rede", "", cor, fardos)
+            add_compra("Fardo(s) de Rede", "", cor, fardos)
             total_fardos_rede += fardos
             
-        # O CÁLCULO EXATO E RIGOROSO DAS BOLINHAS
-        if area_bolinhas > 0:
-            total_pacotes = int(math.floor((area_bolinhas * 1.5) + 0.5))
+        # O CÁLCULO EXATO DAS BOLINHAS (Travado na regra da placa de 2.05x2.05)
+        if len(cores_bolinhas) > 0:
+            area_base_bolinhas = area_bolinhas
+            if area_base_bolinhas == 0:
+                area_base_bolinhas = sum(area_eva_por_cor.values())
+                
+            total_pacotes = int(math.floor((area_base_bolinhas * 1.5) + 0.5))
             
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
@@ -540,15 +539,15 @@ if arquivo_excel and arquivo_csv_3d:
             
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
-                add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
-            elif qtd_cores > 0:
+                add_compra("Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
+            else:
                 base_qtd = total_pacotes // qtd_cores
                 resto = total_pacotes % qtd_cores
                 for i, cor in enumerate(cores_lista):
                     qtd_para_cor = base_qtd + (1 if i < resto else 0)
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
-                        add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
+                        add_compra("Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
             
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
@@ -560,7 +559,7 @@ if arquivo_excel and arquivo_csv_3d:
             
             if pacotes_iso > 0: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
-                add_compra("ESTOQUE", "Pacote(s) de Isotubo", "", cor, pacotes_iso)
+                add_compra("Pacote(s) de Isotubo", "", cor, pacotes_iso)
             if pacotes_fitilho > 0:
                 if tem_rede_preta: fitilhos_pretos_tubos += pacotes_fitilho
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
@@ -668,7 +667,7 @@ if arquivo_excel and arquivo_csv_3d:
         relatorio["PARAFUSOS"]['agregados'][("Bujão de Kid Play", "", "")] = 30
         if total_fardos_rede > 0:
             relatorio["PARAFUSOS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
-            add_compra("AMARRAÇÃO E FIXAÇÃO", "Cordão", "", "", total_fardos_rede)
+            add_compra("Cordão", "", "", total_fardos_rede)
 
         pacotes_extra_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
         if pacotes_extra_planilha > 0:
@@ -677,11 +676,11 @@ if arquivo_excel and arquivo_csv_3d:
                 
         if fitilhos_brancos_tubos > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
-            add_compra("AMARRAÇÃO E FIXAÇÃO", "Pacote(s) de Fitilho", "", "Branco", fitilhos_brancos_tubos)
+            add_compra("Pacote(s) de Fitilho", "", "Branco", fitilhos_brancos_tubos)
             
         if fitilhos_pretos_tubos > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
-            add_compra("AMARRAÇÃO E FIXAÇÃO", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
+            add_compra("Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
 
         # --- 8. CRIAÇÃO DO NOVO PAINEL DASHBOARD (CARDS) ---
         st.markdown("### 🖨️ Painel de Produção (Ordens de Serviço)")
@@ -693,12 +692,12 @@ if arquivo_excel and arquivo_csv_3d:
             "PISOS E CONTENÇÕES": "🧩", "CONEXÕES DE ALUMÍNIO": "🔗", "LISTA DE COMPRAS": "🛒"
         }
 
-        setores_base = [s for s in sorted(list(relatorio.keys())) if (relatorio[s].get('agregados') or relatorio[s].get('lista_sequencial') or relatorio[s].get('agregados_por_categoria')) and s not in ["CHECK LIST DE EXPEDIÇÃO", "LISTA DE COMPRAS"]]
+        setores_base = [s for s in sorted(list(relatorio.keys())) if (relatorio[s].get('agregados') or relatorio[s].get('lista_sequencial')) and s not in ["CHECK LIST DE EXPEDIÇÃO", "LISTA DE COMPRAS"]]
         
         nomes_abas = setores_base
         if "CHECK LIST DE EXPEDIÇÃO" in relatorio and relatorio["CHECK LIST DE EXPEDIÇÃO"].get('agregados'):
             nomes_abas.append("CHECK LIST DE EXPEDIÇÃO")
-        if "LISTA DE COMPRAS" in relatorio and relatorio["LISTA DE COMPRAS"].get('agregados_por_categoria'):
+        if "LISTA DE COMPRAS" in relatorio and relatorio["LISTA DE COMPRAS"].get('agregados'):
             nomes_abas.append("LISTA DE COMPRAS")
             
         cols = st.columns(3)
@@ -730,14 +729,6 @@ if arquivo_excel and arquivo_csv_3d:
                                 med_str = f" {chave[1]}" if chave[1] else ""
                                 cor_str = f" {chave[2]}" if chave[2] else ""
                                 st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
-                        if 'agregados_por_categoria' in relatorio[cat]:
-                            for subcat in sorted(relatorio[cat]['agregados_por_categoria'].keys()):
-                                st.markdown(f"**{subcat}**")
-                                for chave in sorted(relatorio[cat]['agregados_por_categoria'][subcat].keys(), key=lambda x: x[0]):
-                                    qtd = relatorio[cat]['agregados_por_categoria'][subcat][chave]
-                                    med_str = f" {chave[1]}" if chave[1] else ""
-                                    cor_str = f" {chave[2]}" if chave[2] else ""
-                                    st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
 
         st.markdown("---")
         st.subheader("⚠️ Auditoria 3D")
