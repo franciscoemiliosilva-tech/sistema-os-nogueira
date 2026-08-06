@@ -73,7 +73,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     data_atual = datetime.now().strftime("%d/%m/%Y")
     
     logo_html = ""
-    # Novo Sistema de Radar de Logo (Ignora maiusculas/minusculas)
     try:
         arquivos_locais = os.listdir('.')
         for f in arquivos_locais:
@@ -311,7 +310,6 @@ if arquivo_excel and arquivo_csv_3d:
             nome_amigavel = nome_original
             categoria_peca = "OUTROS"
             
-            # Leitor das Bolinhas Exportadas pelo 3ds Max
             is_conexao_nativa = False
             for chv_conexao, nome_padrao in banco_dados_seguro.items():
                 if chv_conexao in nome_original:
@@ -347,12 +345,8 @@ if arquivo_excel and arquivo_csv_3d:
                 area_rede_por_cor[cor_limpa] = area_rede_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
                 continue
                 
-            # NOVO MOTOR DE BOLINHAS (BASEADO NA PLACA DE EVA DE 2.05m)
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                modulos_x = math.ceil(dims[1] / 205.0) if dims[1] > 0 else 1
-                modulos_y = math.ceil(dims[2] / 205.0) if dims[2] > 0 else 1
-                area_snappada = (modulos_x * 2.05) * (modulos_y * 2.05)
-                area_bolinhas += area_snappada
+                area_bolinhas += ((dims[1] * dims[2]) / 10000.0)
                 cores_bolinhas.add(cor_limpa)
                 continue
 
@@ -472,7 +466,11 @@ if arquivo_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
-            total_pacotes = int(math.floor((area_bolinhas * 1.5) + 0.5))
+            area_placa = 4.2025
+            qtd_placas = math.ceil(area_bolinhas / area_placa)
+            area_calculo = qtd_placas * area_placa
+            
+            total_pacotes = round(area_calculo * 1.5)
             
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
@@ -510,7 +508,6 @@ if arquivo_excel and arquivo_csv_3d:
             if chave not in checklist_cat[cat_nome]: checklist_cat[cat_nome][chave] = 0
             checklist_cat[cat_nome][chave] += qtd
 
-        # REMOVIDO: "CONEXÕES DE ALUMÍNIO"
         cats_to_check = ["ATIVIDADES KID PLAY", "SERRALHERIA", "ROTTO BRASIL", "IMPRESSÃO", "FIBRA DE VIDRO", "ESTOQUE", "COSTURA"]
         for cat_c in cats_to_check:
             if cat_c in relatorio and 'agregados' in relatorio[cat_c]:
