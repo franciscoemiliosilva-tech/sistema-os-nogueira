@@ -644,6 +644,7 @@ if arquivo_excel and arquivo_csv_3d:
         if "CONEXÕES DE ALUMÍNIO" in relatorio and 'agregados' in relatorio["CONEXÕES DE ALUMÍNIO"]:
             for chv, qtd in relatorio["CONEXÕES DE ALUMÍNIO"]['agregados'].items(): add_compra("CONEXÕES DE ALUMÍNIO", chv[0], chv[1], chv[2], qtd)
                 
+        total_metros_tubos = sum(metragem_tubos_por_cor.values())
         if total_metros_tubos > 0:
             qtd_barras_6m = int(math.ceil(total_metros_tubos / 6.0))
             add_compra("TUBOS KID PLAY", "Tubo Kid Play (Barras de 6m)", "", "", qtd_barras_6m)
@@ -691,7 +692,7 @@ if arquivo_excel and arquivo_csv_3d:
         nomes_abas = setores_base
         if "CHECK LIST DE EXPEDIÇÃO" in relatorio and relatorio["CHECK LIST DE EXPEDIÇÃO"].get('agregados'):
             nomes_abas.append("CHECK LIST DE EXPEDIÇÃO")
-        if "LISTA DE COMPRAS" in relatorio and relatorio["LISTA DE COMPRAS"].get('agregados'):
+        if "LISTA DE COMPRAS" in relatorio and relatorio["LISTA DE COMPRAS"].get('agregados_por_categoria') or relatorio["LISTA DE COMPRAS"].get('agregados'):
             nomes_abas.append("LISTA DE COMPRAS")
             
         cols = st.columns(3)
@@ -723,6 +724,15 @@ if arquivo_excel and arquivo_csv_3d:
                                 med_str = f" {chave[1]}" if chave[1] else ""
                                 cor_str = f" {chave[2]}" if chave[2] else ""
                                 st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
+                        # Mostra no dropdown da Lista de Compras também, já que agora ela é categorizada
+                        if 'agregados_por_categoria' in relatorio[cat]:
+                            for subcat in sorted(relatorio[cat]['agregados_por_categoria'].keys()):
+                                st.markdown(f"**{subcat}**")
+                                for chave in sorted(relatorio[cat]['agregados_por_categoria'][subcat].keys(), key=lambda x: x[0]):
+                                    qtd = relatorio[cat]['agregados_por_categoria'][subcat][chave]
+                                    med_str = f" {chave[1]}" if chave[1] else ""
+                                    cor_str = f" {chave[2]}" if chave[2] else ""
+                                    st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
 
         st.markdown("---")
         st.subheader("⚠️ Auditoria 3D")
