@@ -472,7 +472,10 @@ if arquivo_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
-            total_pacotes = int(math.floor((area_bolinhas * 1.5) + 0.5))
+            area_placa = 4.2025
+            qtd_placas = math.ceil(area_bolinhas / area_placa)
+            area_corrigida = qtd_placas * area_placa
+            total_pacotes = int(math.floor((area_corrigida * 1.5) + 0.5))
             
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
