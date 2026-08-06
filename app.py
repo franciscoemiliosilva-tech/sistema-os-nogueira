@@ -422,7 +422,7 @@ if arquivo_excel and arquivo_csv_3d:
             for chave, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
                 if "CURVA" in chave[0].upper(): qtd_curva_360 += qtd
 
-        # (5) FIXOS, SERRALHERIA E ESTOQUE
+        # (5) FIXOS, SERRALHERIA, ESTOQUE E LISTA DE COMPRAS
         if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
         if 'agregados' not in relatorio["IMPRESSÃO"]: relatorio["IMPRESSÃO"]['agregados'] = {}
         relatorio["IMPRESSÃO"]['agregados'][("Régua do Kid Play", "", "")] = 1
@@ -455,22 +455,24 @@ if arquivo_excel and arquivo_csv_3d:
 
         if "ESTOQUE" not in relatorio: relatorio["ESTOQUE"] = {}
         if 'agregados' not in relatorio["ESTOQUE"]: relatorio["ESTOQUE"]['agregados'] = {}
+        
+        if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
+        if 'agregados' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados'] = {}
 
         for cor, area in area_eva_por_cor.items():
-            relatorio["ESTOQUE"]['agregados'][("Placa(s) de EVA", "", cor)] = math.ceil(area / 3.065)
+            qtd_eva = math.ceil(area / 3.065)
+            relatorio["ESTOQUE"]['agregados'][("Placa(s) de EVA", "", cor)] = qtd_eva
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Placa(s) de EVA", "", cor)] = qtd_eva
             
         total_fardos_rede = 0
         for cor, area in area_rede_por_cor.items():
             fardos = math.ceil(area / 86.25)
             relatorio["ESTOQUE"]['agregados'][("Fardo(s) de Rede", "", cor)] = fardos
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Fardo(s) de Rede", "", cor)] = fardos
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
-            area_placa = 4.2025
-            qtd_placas = math.ceil(area_bolinhas / area_placa)
-            area_calculo = qtd_placas * area_placa
-            
-            total_pacotes = round(area_calculo * 1.5)
+            total_pacotes = int(math.floor((area_bolinhas * 1.5) + 0.5))
             
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
@@ -478,6 +480,7 @@ if arquivo_excel and arquivo_csv_3d:
             
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
+                relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
             elif qtd_cores > 0:
                 base_qtd = total_pacotes // qtd_cores
                 resto = total_pacotes % qtd_cores
@@ -485,6 +488,7 @@ if arquivo_excel and arquivo_csv_3d:
                     qtd_para_cor = base_qtd + (1 if i < resto else 0)
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
+                        relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
             
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
@@ -494,7 +498,9 @@ if arquivo_excel and arquivo_csv_3d:
             pacotes_iso = math.ceil((metros * 1.25) / 64.0)
             pacotes_fitilho = math.ceil(metros * 0.08)
             
-            if pacotes_iso > 0: relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
+            if pacotes_iso > 0: 
+                relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
+                relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
             if pacotes_fitilho > 0:
                 if tem_rede_preta: fitilhos_pretos_tubos += pacotes_fitilho
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
@@ -508,6 +514,7 @@ if arquivo_excel and arquivo_csv_3d:
             if chave not in checklist_cat[cat_nome]: checklist_cat[cat_nome][chave] = 0
             checklist_cat[cat_nome][chave] += qtd
 
+        # A "LISTA DE COMPRAS" NÃO ENTRA NESTA LISTA DE CHECKLIST
         cats_to_check = ["ATIVIDADES KID PLAY", "SERRALHERIA", "ROTTO BRASIL", "IMPRESSÃO", "FIBRA DE VIDRO", "ESTOQUE", "COSTURA"]
         for cat_c in cats_to_check:
             if cat_c in relatorio and 'agregados' in relatorio[cat_c]:
@@ -561,7 +568,7 @@ if arquivo_excel and arquivo_csv_3d:
                     contagem_projeto[n_limpo] = contagem_projeto.get(n_limpo, 0) + 1
                     
                 for cat, dados_cat in relatorio.items():
-                    if cat == "PARAFUSOS" or cat == "CHECK LIST DE EXPEDIÇÃO": continue
+                    if cat in ["PARAFUSOS", "CHECK LIST DE EXPEDIÇÃO", "LISTA DE COMPRAS"]: continue
                     if 'agregados' in dados_cat:
                         qtd_na_aba = {}
                         for chv, qtd in dados_cat['agregados'].items():
@@ -599,14 +606,20 @@ if arquivo_excel and arquivo_csv_3d:
         relatorio["PARAFUSOS"]['agregados'][("Bujão de Kid Play", "", "")] = 30
         if total_fardos_rede > 0:
             relatorio["PARAFUSOS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
 
         pacotes_extra_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
         if pacotes_extra_planilha > 0:
             if tem_rede_preta: fitilhos_pretos_tubos += pacotes_extra_planilha
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
                 
-        if fitilhos_brancos_tubos > 0: relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
-        if fitilhos_pretos_tubos > 0: relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
+        if fitilhos_brancos_tubos > 0: 
+            relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
+            
+        if fitilhos_pretos_tubos > 0: 
+            relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
 
         # --- 8. CRIAÇÃO DO NOVO PAINEL DASHBOARD (CARDS) ---
         st.markdown("### 🖨️ Painel de Produção (Ordens de Serviço)")
@@ -615,7 +628,7 @@ if arquivo_excel and arquivo_csv_3d:
             "SERRALHERIA": "🔨", "PARAFUSOS": "🔩", "ESTOQUE": "📦", "COSTURA": "🧵",
             "MARCENARIA": "🪵", "IMPRESSÃO": "🖨️", "FIBRA DE VIDRO": "🚤", "ROTTO BRASIL": "🎠",
             "ATIVIDADES KID PLAY": "🎯", "CHECK LIST DE EXPEDIÇÃO": "📋", "TUBOS KID PLAY": "🪈",
-            "PISOS E CONTENÇÕES": "🧩", "CONEXÕES DE ALUMÍNIO": "🔗"
+            "PISOS E CONTENÇÕES": "🧩", "CONEXÕES DE ALUMÍNIO": "🔗", "LISTA DE COMPRAS": "🛒"
         }
 
         setores_base = [s for s in sorted(list(relatorio.keys())) if (relatorio[s].get('agregados') or relatorio[s].get('lista_sequencial')) and s != "CHECK LIST DE EXPEDIÇÃO"]
