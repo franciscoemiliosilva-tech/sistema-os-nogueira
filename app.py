@@ -46,8 +46,14 @@ def corrigir_ortografia_cor(cor_bruta):
     cores_detectadas = []
     if "AMAAR" in texto or "AMAR" in texto: cores_detectadas.append("Amarelo")
     if "VERME" in texto: cores_detectadas.append("Vermelho")
-    if "VERD" in texto: cores_detectadas.append("Verde Claro" if "CLAR" in texto else "Verde")
-    if "AZU" in texto: cores_detectadas.append("Azul Claro" if "CLAR" in texto else "Azul")
+    if "VERD" in texto:
+        if "CLAR" in texto: cores_detectadas.append("Verde Claro")
+        elif "ESCUR" in texto: cores_detectadas.append("Verde Escuro")
+        else: cores_detectadas.append("Verde")
+    if "AZU" in texto:
+        if "CLAR" in texto: cores_detectadas.append("Azul Claro")
+        elif "ESCUR" in texto: cores_detectadas.append("Azul Escuro")
+        else: cores_detectadas.append("Azul")
     if "PRET" in texto: cores_detectadas.append("Preto")
     if "LARAN" in texto: cores_detectadas.append("Laranja")
     if "MARRO" in texto: cores_detectadas.append("Marrom")
@@ -330,7 +336,7 @@ if arquivo_excel and arquivo_csv_3d:
                 categoria_peca = "TUBOS KID PLAY"
                 max_dim = max(w, l, h)
                 metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (max_dim / 100.0)
-                nome_amigavel = "TUBO DE KID PLAY" # CORREÇÃO NOME APLICADA AQUI
+                nome_amigavel = "TUBO DE KID PLAY" 
                 
             if "EVA" in nome_amigavel.upper():
                 area_eva_por_cor[cor_limpa] = area_eva_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
@@ -377,7 +383,7 @@ if arquivo_excel and arquivo_csv_3d:
 
             medida = ""
             if cat == "TUBOS KID PLAY":
-                medida = str(int(max(item['dims']))) # CORREÇÃO MEDIDA APLICADA AQUI
+                medida = str(int(max(item['dims']))) 
             elif any(x in nome_upper for x in ["CONTEN", "PORT", "FORA DE PADR", "BANNER"]):
                 if item['dims'][1] > 0 and cat != "COSTURA": medida = f"{item['dims'][2]}x{item['dims'][1]}" 
 
@@ -459,18 +465,24 @@ if arquivo_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
-            total_pacotes = int(round(area_bolinhas * 1.5))
+            # Regra estrita Nogueira: Placa de EVA (2.05 x 2.05 = 4.2025 m²) gera exatos 6 pacotes
+            area_placa_eva = 2.05 * 2.05
+            proporcao_placas = area_bolinhas / area_placa_eva
+            total_pacotes = int(round(proporcao_placas * 6))
+            
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
             
-            if qtd_cores > 3: relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
+            if qtd_cores > 3: 
+                relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
             elif qtd_cores > 0:
                 base_qtd = total_pacotes // qtd_cores
                 resto = total_pacotes % qtd_cores
                 for i, cor in enumerate(cores_lista):
                     qtd_para_cor = base_qtd + (1 if i < resto else 0)
-                    if qtd_para_cor > 0: relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
+                    if qtd_para_cor > 0: 
+                        relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
             
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
