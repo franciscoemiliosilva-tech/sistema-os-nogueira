@@ -324,6 +324,11 @@ if arquivo_excel and arquivo_csv_3d:
                     nome_amigavel = padronizar_medidas_maior_menor(banco_dados[codigo_base]['nome'])
                     categoria_peca = banco_dados[codigo_base]['cat']
 
+            # Força aba Fibra de Vidro se não mapeado mas tiver nome evidente
+            if categoria_peca == "OUTROS":
+                if any(x in nome_original.upper() for x in ["FIBRA", "ESCORREGADOR", "TOBOGA", "TUBO ESPIRAL"]):
+                    categoria_peca = "FIBRA DE VIDRO"
+
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
 
@@ -365,10 +370,32 @@ if arquivo_excel and arquivo_csv_3d:
         qtd_turbilhao = 0
         qtd_ponte_105 = 0; qtd_ponte_210 = 0
         qtd_ferro_triangulo = 0; qtd_ferro_fora_padrao = 0
+        
+        # Variáveis globais para a Lista de Compras
+        total_area_marcenaria = 0.0
+        qtd_corcova_triangulo = 0
+        qtd_corcova_redondo = 0
+        qtd_boxe_p = 0
+        qtd_boxe_g = 0
 
         for item in items_parsed:
             cat = item['cat']
             nome_upper = item['nome'].upper()
+            
+            # Somatória de área para a lista de compras (Marcenaria)
+            if cat == "MARCENARIA" or item['is_piso_contencao']:
+                area_item = (item['dims'][1] / 100.0) * (item['dims'][2] / 100.0) if len(item['dims']) >= 3 else 0.0
+                total_area_marcenaria += area_item
+
+            # Contadores de espumas específicas
+            if "CORCOVA" in nome_upper:
+                if "TRIANG" in nome_upper: qtd_corcova_triangulo += 1
+                elif "REDOND" in nome_upper: qtd_corcova_redondo += 1
+            if "BOXE" in nome_upper:
+                parts = nome_upper.split()
+                if "G" in parts or " G" in nome_upper or nome_upper.endswith("G"): qtd_boxe_g += 1
+                elif "P" in parts or " P" in nome_upper or nome_upper.endswith("P"): qtd_boxe_p += 1
+
             if cat not in relatorio: relatorio[cat] = {}
 
             if cat not in ["TUBOS KID PLAY", "PISOS E CONTENÇÕES", "SERRALHERIA"]:
@@ -422,7 +449,7 @@ if arquivo_excel and arquivo_csv_3d:
             for chave, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
                 if "CURVA" in chave[0].upper(): qtd_curva_360 += qtd
 
-        # (5) FIXOS, SERRALHERIA, ESTOQUE E LISTA DE COMPRAS
+        # (5) FIXOS, SERRALHERIA E ESTOQUE
         if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
         if 'agregados' not in relatorio["IMPRESSÃO"]: relatorio["IMPRESSÃO"]['agregados'] = {}
         relatorio["IMPRESSÃO"]['agregados'][("Régua do Kid Play", "", "")] = 1
@@ -455,20 +482,14 @@ if arquivo_excel and arquivo_csv_3d:
 
         if "ESTOQUE" not in relatorio: relatorio["ESTOQUE"] = {}
         if 'agregados' not in relatorio["ESTOQUE"]: relatorio["ESTOQUE"]['agregados'] = {}
-        
-        if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
-        if 'agregados' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados'] = {}
 
         for cor, area in area_eva_por_cor.items():
-            qtd_eva = math.ceil(area / 3.065)
-            relatorio["ESTOQUE"]['agregados'][("Placa(s) de EVA", "", cor)] = qtd_eva
-            relatorio["LISTA DE COMPRAS"]['agregados'][("Placa(s) de EVA", "", cor)] = qtd_eva
+            relatorio["ESTOQUE"]['agregados'][("Placa(s) de EVA", "", cor)] = math.ceil(area / 3.065)
             
         total_fardos_rede = 0
         for cor, area in area_rede_por_cor.items():
             fardos = math.ceil(area / 86.25)
             relatorio["ESTOQUE"]['agregados'][("Fardo(s) de Rede", "", cor)] = fardos
-            relatorio["LISTA DE COMPRAS"]['agregados'][("Fardo(s) de Rede", "", cor)] = fardos
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
@@ -483,7 +504,6 @@ if arquivo_excel and arquivo_csv_3d:
             
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
-                relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
             elif qtd_cores > 0:
                 base_qtd = total_pacotes // qtd_cores
                 resto = total_pacotes % qtd_cores
@@ -491,7 +511,6 @@ if arquivo_excel and arquivo_csv_3d:
                     qtd_para_cor = base_qtd + (1 if i < resto else 0)
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
-                        relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
             
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
@@ -501,9 +520,7 @@ if arquivo_excel and arquivo_csv_3d:
             pacotes_iso = math.ceil((metros * 1.25) / 64.0)
             pacotes_fitilho = math.ceil(metros * 0.08)
             
-            if pacotes_iso > 0: 
-                relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
-                relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
+            if pacotes_iso > 0: relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
             if pacotes_fitilho > 0:
                 if tem_rede_preta: fitilhos_pretos_tubos += pacotes_fitilho
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
@@ -517,7 +534,6 @@ if arquivo_excel and arquivo_csv_3d:
             if chave not in checklist_cat[cat_nome]: checklist_cat[cat_nome][chave] = 0
             checklist_cat[cat_nome][chave] += qtd
 
-        # A "LISTA DE COMPRAS" NÃO ENTRA NESTA LISTA DE CHECKLIST
         cats_to_check = ["ATIVIDADES KID PLAY", "SERRALHERIA", "ROTTO BRASIL", "IMPRESSÃO", "FIBRA DE VIDRO", "ESTOQUE", "COSTURA"]
         for cat_c in cats_to_check:
             if cat_c in relatorio and 'agregados' in relatorio[cat_c]:
@@ -609,22 +625,70 @@ if arquivo_excel and arquivo_csv_3d:
         relatorio["PARAFUSOS"]['agregados'][("Bujão de Kid Play", "", "")] = 30
         if total_fardos_rede > 0:
             relatorio["PARAFUSOS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
-            relatorio["LISTA DE COMPRAS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
 
         pacotes_extra_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
         if pacotes_extra_planilha > 0:
             if tem_rede_preta: fitilhos_pretos_tubos += pacotes_extra_planilha
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
                 
-        if fitilhos_brancos_tubos > 0: 
-            relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
-            relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
-            
-        if fitilhos_pretos_tubos > 0: 
-            relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
-            relatorio["LISTA DE COMPRAS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
+        if fitilhos_brancos_tubos > 0: relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
+        if fitilhos_pretos_tubos > 0: relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
 
-        # --- 8. CRIAÇÃO DO NOVO PAINEL DASHBOARD (CARDS) ---
+        # ---------------------------------------------------------
+        # (8) MONTAGEM DA LISTA DE COMPRAS
+        # ---------------------------------------------------------
+        if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
+        if 'agregados' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados'] = {}
+        
+        # Conexões de Alumínio
+        if "CONEXÕES DE ALUMÍNIO" in relatorio and 'agregados' in relatorio["CONEXÕES DE ALUMÍNIO"]:
+            for chv, qtd in relatorio["CONEXÕES DE ALUMÍNIO"]['agregados'].items():
+                relatorio["LISTA DE COMPRAS"]['agregados'][chv] = relatorio["LISTA DE COMPRAS"]['agregados'].get(chv, 0) + qtd
+                
+        # Tubos Kid Play em Barras de 6m
+        total_metros_tubos = sum(metragem_tubos_por_cor.values())
+        if total_metros_tubos > 0:
+            qtd_barras_6m = int(math.ceil(total_metros_tubos / 6.0))
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Tubos Metálicos (Barras de 6m)", "", "")] = qtd_barras_6m
+            
+        # Estoque
+        if "ESTOQUE" in relatorio and 'agregados' in relatorio["ESTOQUE"]:
+            for chv, qtd in relatorio["ESTOQUE"]['agregados'].items():
+                relatorio["LISTA DE COMPRAS"]['agregados'][chv] = relatorio["LISTA DE COMPRAS"]['agregados'].get(chv, 0) + qtd
+                
+        # Rotto Brasil
+        if "ROTTO BRASIL" in relatorio and 'agregados' in relatorio["ROTTO BRASIL"]:
+            for chv, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
+                relatorio["LISTA DE COMPRAS"]['agregados'][chv] = relatorio["LISTA DE COMPRAS"]['agregados'].get(chv, 0) + qtd
+                
+        # Parafusos (Exceto Terminal de Calandra)
+        if "PARAFUSOS" in relatorio and 'agregados' in relatorio["PARAFUSOS"]:
+            for chv, qtd in relatorio["PARAFUSOS"]['agregados'].items():
+                if "TERMINAL DE CALANDRA" not in chv[0].upper():
+                    relatorio["LISTA DE COMPRAS"]['agregados'][chv] = relatorio["LISTA DE COMPRAS"]['agregados'].get(chv, 0) + qtd
+                    
+        # Marcenaria (Chapas de 2,20 x 1,10m = 2.42m²)
+        if total_area_marcenaria > 0:
+            qtd_chapas = int(math.ceil(total_area_marcenaria / 2.42))
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Chapas de Madeira MDF/Compensado (2,20 x 1,10m)", "", "")] = qtd_chapas
+            
+        # Fibra de Vidro
+        if "FIBRA DE VIDRO" in relatorio and 'agregados' in relatorio["FIBRA DE VIDRO"]:
+            for chv, qtd in relatorio["FIBRA DE VIDRO"]['agregados'].items():
+                relatorio["LISTA DE COMPRAS"]['agregados'][chv] = relatorio["LISTA DE COMPRAS"]['agregados'].get(chv, 0) + qtd
+                
+        # Espumas Específicas
+        if qtd_corcova_triangulo > 0:
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Corcovas Bloco de Espuma Triângulo", "", "")] = qtd_corcova_triangulo
+        if qtd_corcova_redondo > 0:
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Corcovas Bloco de Espuma Redondo", "", "")] = qtd_corcova_redondo
+        if qtd_boxe_p > 0:
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Boxe Cilindro de Espuma P", "", "")] = qtd_boxe_p
+        if qtd_boxe_g > 0:
+            relatorio["LISTA DE COMPRAS"]['agregados'][("Boxe G Cilindro de Espuma G", "", "")] = qtd_boxe_g
+
+
+        # --- 9. CRIAÇÃO DO NOVO PAINEL DASHBOARD (CARDS) ---
         st.markdown("### 🖨️ Painel de Produção (Ordens de Serviço)")
         
         icones = {
