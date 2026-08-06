@@ -414,15 +414,19 @@ if arquivo_excel and arquivo_csv_3d:
             nome_upper = item['nome'].upper()
             if cat not in relatorio: relatorio[cat] = {}
             
-            # Contagem de Espumas Especiais para Lista de Compras
-            if "BOXE" in nome_upper or re.search(r'\bBOX\b', nome_upper):
-                if " G" in nome_upper or "-G" in nome_upper or "GRAND" in nome_upper or " G " in nome_upper:
+            # ---------------------------------------------------------
+            # CONTAGEM DE ESPUMAS ESPECIAIS (CORRIGIDO)
+            # Lê EXATAMENTE "SACO DE BOXE" para evitar pegar lixo
+            # Lê EXATAMENTE "TRIÂNGULO" (com acento) para evitar sumiço
+            # ---------------------------------------------------------
+            if "SACO DE BOXE" in nome_upper:
+                if "GRAND" in nome_upper or " G " in nome_upper or nome_upper.endswith(" G") or "-G" in nome_upper:
                     espumas_calc["ESPUMA CILINDRICA 26X26X60CM"] += 1
                 else:
                     espumas_calc["ESPUMA CILINDRICA 20X20X60CM"] += 1
                     
             if "CORCOVA" in nome_upper:
-                if "TRIANG" in nome_upper:
+                if "TRIANG" in nome_upper or "TRIÂNG" in nome_upper:
                     espumas_calc["ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM"] += 1
                 else:
                     espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += 1
