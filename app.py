@@ -367,8 +367,12 @@ if arquivo_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                area_bolinhas += ((dims[1] * dims[2]) / 10000.0)
                 cores_bolinhas.add(cor_limpa)
+                if max(dims) > 20:
+                    modulos_x = math.ceil(dims[1] / 205.0) if dims[1] > 0 else 1
+                    modulos_y = math.ceil(dims[2] / 205.0) if dims[2] > 0 else 1
+                    area_snappada = (modulos_x * 2.05) * (modulos_y * 2.05)
+                    area_bolinhas += area_snappada
                 continue
                 
             is_impresso = False
@@ -564,8 +568,19 @@ if arquivo_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Fardo(s) de Rede", "", cor, fardos)
             total_fardos_rede += fardos
             
-        if area_bolinhas > 0:
-            total_pacotes = int(round(area_bolinhas * 1.5))
+        # O CÁLCULO EXATO DAS BOLINHAS (TRAVADO NA PLACA NOGUEIRA: 4.2025m2)
+        if len(cores_bolinhas) > 0:
+            area_base_bolinhas = area_bolinhas
+            if area_base_bolinhas == 0:
+                area_base_bolinhas = sum(area_eva_por_cor.values())
+                
+            area_placa_eva = 4.2025
+            qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
+            if qtd_placas_ref == 0: qtd_placas_ref = 1
+            area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
+            
+            total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
+            
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
@@ -573,7 +588,7 @@ if arquivo_excel and arquivo_csv_3d:
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
-            elif qtd_cores > 0:
+            else:
                 base_qtd = total_pacotes // qtd_cores
                 resto = total_pacotes % qtd_cores
                 for i, cor in enumerate(cores_lista):
