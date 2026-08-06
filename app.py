@@ -403,10 +403,10 @@ if arquivo_excel and arquivo_csv_3d:
         qtd_ferro_triangulo = 0; qtd_ferro_fora_padrao = 0
         
         espumas_calc = {
-            "Cilindro de Espuma P": 0,
-            "Cilindro de Espuma G": 0,
-            "Bloco de Espuma Triângulo": 0,
-            "Bloco de Espuma Redondo": 0
+            "ESPUMA CILINDRICA 20X20X60CM - P": 0,
+            "ESPUMA CILINDRICA 26X26X60CM - G": 0,
+            "ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM": 0,
+            "ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM": 0
         }
 
         for item in items_parsed:
@@ -417,15 +417,15 @@ if arquivo_excel and arquivo_csv_3d:
             # Contagem de Espumas Especiais para Lista de Compras
             if "BOXE" in nome_upper or re.search(r'\bBOX\b', nome_upper):
                 if " P" in nome_upper or "-P" in nome_upper or "PEQ" in nome_upper or " P " in nome_upper:
-                    espumas_calc["Cilindro de Espuma P"] += 1
+                    espumas_calc["ESPUMA CILINDRICA 20X20X60CM - P"] += 1
                 else:
-                    espumas_calc["Cilindro de Espuma G"] += 1
+                    espumas_calc["ESPUMA CILINDRICA 26X26X60CM - G"] += 1
                     
             if "CORCOVA" in nome_upper:
                 if "TRIANG" in nome_upper:
-                    espumas_calc["Bloco de Espuma Triângulo"] += 1
+                    espumas_calc["ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM"] += 1
                 else:
-                    espumas_calc["Bloco de Espuma Redondo"] += 1
+                    espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += 1
 
             if cat not in ["TUBOS KID PLAY", "PISOS E CONTENÇÕES", "SERRALHERIA"]:
                 if "TURBILHÃO" in nome_upper: qtd_turbilhao += 1
@@ -568,12 +568,7 @@ if arquivo_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Fardo(s) de Rede", "", cor, fardos)
             total_fardos_rede += fardos
             
-        # O CÁLCULO EXATO DAS BOLINHAS (TRAVADO NA PLACA NOGUEIRA: 4.2025m2)
-        if len(cores_bolinhas) > 0:
-            area_base_bolinhas = area_bolinhas
-            if area_base_bolinhas == 0:
-                area_base_bolinhas = sum(area_eva_por_cor.values())
-                
+        if area_bolinhas > 0:
             area_placa_eva = 4.2025
             qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
@@ -588,7 +583,7 @@ if arquivo_excel and arquivo_csv_3d:
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
-            else:
+            elif qtd_cores > 0:
                 base_qtd = total_pacotes // qtd_cores
                 resto = total_pacotes % qtd_cores
                 for i, cor in enumerate(cores_lista):
