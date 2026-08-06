@@ -124,7 +124,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     total_q = 0
     
     if is_checklist and 'agregados_por_categoria' in dados:
-        ordem_cats = ["ATIVIDADES KID PLAY", "CONEXÕES DE ALUMÍNIO", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
+        ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
         def sort_cat(c):
             try: return ordem_cats.index(c)
             except: return 99
@@ -465,10 +465,8 @@ if arquivo_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         if area_bolinhas > 0:
-            # Regra estrita Nogueira: Placa de EVA (2.05 x 2.05 = 4.2025 m²) gera exatos 6 pacotes
-            area_placa_eva = 2.05 * 2.05
-            proporcao_placas = area_bolinhas / area_placa_eva
-            total_pacotes = int(round(proporcao_placas * 6))
+            # Regra estrita Nogueira: Área total * 1.5 com arredondamento padrão matemático
+            total_pacotes = int(math.floor((area_bolinhas * 1.5) + 0.5))
             
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
@@ -506,7 +504,8 @@ if arquivo_excel and arquivo_csv_3d:
             if chave not in checklist_cat[cat_nome]: checklist_cat[cat_nome][chave] = 0
             checklist_cat[cat_nome][chave] += qtd
 
-        cats_to_check = ["ATIVIDADES KID PLAY", "SERRALHERIA", "ROTTO BRASIL", "IMPRESSÃO", "FIBRA DE VIDRO", "ESTOQUE", "COSTURA", "CONEXÕES DE ALUMÍNIO"]
+        # REMOVIDO: "CONEXÕES DE ALUMÍNIO"
+        cats_to_check = ["ATIVIDADES KID PLAY", "SERRALHERIA", "ROTTO BRASIL", "IMPRESSÃO", "FIBRA DE VIDRO", "ESTOQUE", "COSTURA"]
         for cat_c in cats_to_check:
             if cat_c in relatorio and 'agregados' in relatorio[cat_c]:
                 for chv, q in relatorio[cat_c]['agregados'].items():
