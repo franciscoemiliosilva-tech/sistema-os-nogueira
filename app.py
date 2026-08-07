@@ -159,7 +159,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
                 
-                # Se for número flutuante limpo, formata pra inteiro visualmente
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -277,6 +276,55 @@ with col_u2: arquivo_csv_3d = st.file_uploader("2. Projeto 3D (.csv)", type=["cs
 
 if arquivos_excel and arquivo_csv_3d:
     try:
+        # Tenta achar quem é Mestre e quem é Composição
+        arquivo_mestre = None
+        arquivo_comp = None
+        
+        for f in arquivos_excel:
+            xls = pd.ExcelFile(f)
+            for sheet_name in xls.sheet_names:
+                df_sheet = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                sheet_str = df_sheet.astype(str).to_string().upper()
+                s_name = sheet_name.upper()
+                
+                if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
+                    arquivo_comp = f
+                elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str):
+                    pass
+                else:
+                    arquivo_mestre = f
+            
+        if not arquivo_mestre: arquivo_mestre = arquivos_excel[0]
+        
+        # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
+        df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
+        
+        # Filtro Anti-Clone
+        df_3d['X_round'] = df_3d['PosX'].round(0)
+        df_3d['Y_round'] = df_3d['PosY'].round(0)
+        df_3d['Z_round'] = df_3d['PosZ'].round(0)
+        
+        qt_original = len(df_3d)
+        df_3d = df_3d.drop_duplicates(subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'])
+        qt_limpo = len(df_3d)
+        
+        if qt_original != qt_limpo:
+            st.warning(f"🧹 Filtro Ativado: O sistema deletou {qt_original - qt_limpo} peças duplicadas/sobrepostas no 3D.")
+        
+        cliente_csv, projeto_csv = "", ""
+        for col in df_3d.columns:
+            if "CLIENTE" in str(col).upper(): val = str(df_3d[col].iloc[0]); cliente_csv = val if val != 'nan' else ""
+            if "PV" in str(col).upper() or "PROJETO" in str(col).upper(): val = str(df_3d[col].iloc[0]); projeto_csv = val if val != 'nan' else ""
+                
+        if not cliente_csv:
+            filename = arquivo_csv_3d.name.replace('.csv', '')
+            if " - " in filename: parts = filename.split(" - "); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
+            elif "_" in filename: parts = filename.split("_"); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
+            else: cliente_csv = filename
+
+        cliente_final = cliente_manual if cliente_manual else (cliente_csv if cliente_csv else "NÃO INFORMADO")
+        projeto_final = projeto_manual if projeto_manual else (projeto_csv if projeto_csv else "-")
+
         # --- NOVO MOTOR DE LEITURA BLINDADO (Aba por Aba) ---
         banco_dados = {}
         df_paraf = None
@@ -289,13 +337,10 @@ if arquivos_excel and arquivo_csv_3d:
                 sheet_str = df_sheet.astype(str).to_string().upper()
                 s_name = sheet_name.upper()
                 
-                # Identifica Composição pelas palavras-chave exclusivas ou pelo nome da aba
                 if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
                     df_comp = df_sheet
-                # Identifica Parafusos (Aba que tem FITILHO e TERMINAL)
                 elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str):
                     df_paraf = df_sheet
-                # Identifica Mestre e consolida o banco de dados
                 else:
                     cat_atual = "ITENS GERAIS"
                     for _, row in df_sheet.iterrows():
@@ -326,18 +371,15 @@ if arquivos_excel and arquivo_csv_3d:
                 col2 = row[2] if pd.notna(row[2]) else None
                 col3 = str(row[3]).strip() if pd.notna(row[3]) else ""
                 
-                # Pula linhas 100% vazias
                 if col1 == "" and pd.isna(row[2]):
                     codigo_atual = None
                     continue
                 
-                # Tenta capturar o código oficial do cabeçalho (Ex: Escadinha=A17_)
                 match_cod = re.search(r'=([A-Z][0-9O]{2})', col1.upper())
                 if match_cod:
                     codigo_atual = match_cod.group(1).replace('O', '0')
                     dict_composicao[codigo_atual] = []
                     
-                # Extrai a receita de material vinculada ao código atual
                 elif codigo_atual is not None and col1 != "":
                     try:
                         q_val = float(col2)
@@ -350,37 +392,6 @@ if arquivos_excel and arquivo_csv_3d:
                             "qtd": q_val,
                             "unidade": col3
                         })
-        else:
-            st.warning("⚠️ Nenhuma aba de Composição foi encontrada nos arquivos Excel. As Matérias Primas não serão geradas.")
-
-        # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
-        df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
-        
-        # Filtro Anti-Clone
-        df_3d['X_round'] = df_3d['PosX'].round(0)
-        df_3d['Y_round'] = df_3d['PosY'].round(0)
-        df_3d['Z_round'] = df_3d['PosZ'].round(0)
-        
-        qt_original = len(df_3d)
-        df_3d = df_3d.drop_duplicates(subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'])
-        qt_limpo = len(df_3d)
-        
-        if qt_original != qt_limpo:
-            st.warning(f"🧹 Filtro Ativado: O sistema deletou {qt_original - qt_limpo} peças duplicadas/sobrepostas no 3D.")
-        
-        cliente_csv, projeto_csv = "", ""
-        for col in df_3d.columns:
-            if "CLIENTE" in str(col).upper(): val = str(df_3d[col].iloc[0]); cliente_csv = val if val != 'nan' else ""
-            if "PV" in str(col).upper() or "PROJETO" in str(col).upper(): val = str(df_3d[col].iloc[0]); projeto_csv = val if val != 'nan' else ""
-                
-        if not cliente_csv:
-            filename = arquivo_csv_3d.name.replace('.csv', '')
-            if " - " in filename: parts = filename.split(" - "); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
-            elif "_" in filename: parts = filename.split("_"); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
-            else: cliente_csv = filename
-
-        cliente_final = cliente_manual if cliente_manual else (cliente_csv if cliente_csv else "NÃO INFORMADO")
-        projeto_final = projeto_manual if projeto_manual else (projeto_csv if projeto_csv else "-")
 
         # (2) PROCESSAMENTO PRINCIPAL DO 3D
         items_parsed = []
@@ -413,7 +424,9 @@ if arquivos_excel and arquivo_csv_3d:
                 if codigo_base in banco_dados:
                     nome_amigavel = padronizar_medidas_maior_menor(banco_dados[codigo_base]['nome'])
                     categoria_peca = banco_dados[codigo_base]['cat']
-                    contagem_codigos_oficiais[codigo_base] = contagem_codigos_oficiais.get(codigo_base, 0) + 1
+                    # Agrupa o código + a cor para a herança correta na explosão
+                    chave_cod = (codigo_base, cor_limpa)
+                    contagem_codigos_oficiais[chave_cod] = contagem_codigos_oficiais.get(chave_cod, 0) + 1
 
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
@@ -437,7 +450,6 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                # O motor agora apenas coleta a cor. A matemática de área do bloco foi DESTRUÍDA aqui.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -447,7 +459,6 @@ if arquivos_excel and arquivo_csv_3d:
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
-            # Somatório da área de marcenaria APENAS para calcular a chapa base depois
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
@@ -590,10 +601,6 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
-        # ---------------------------------------------------------
-        # ESPUMAS ESPECIAIS E HOLOFOTES
-        # (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
-        # ---------------------------------------------------------
         espumas_calc = {
             "ESPUMA CILINDRICA 20X20X60CM": 0,
             "ESPUMA CILINDRICA 26X26X60CM": 0,
@@ -645,26 +652,16 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Fardo(s) de Rede", "", cor, fardos)
             total_fardos_rede += fardos
             
-        # ---------------------------------------------------------
-        # O CÁLCULO EXATO DAS BOLINHAS (BASEADO NA SOMA DE TODAS AS PLACAS DE EVA)
-        # --- BLINDADO: NUNCA MAIS ALTERAR ESTA REGRA! ---
-        # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
-            # 1. Pega a Área Total do EVA gerado no projeto
             area_base_bolinhas = sum(area_eva_por_cor.values())
-                
-            # 2. Divide pela Chapa Nogueira e Multiplica por 1.5
             area_placa_eva = 4.2025
             qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
             area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
-            
             total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
-            
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
-            
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
@@ -676,7 +673,6 @@ if arquivos_excel and arquivo_csv_3d:
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
                         add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
-        # ---------------------------------------------------------
 
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
@@ -693,7 +689,6 @@ if arquivos_excel and arquivo_csv_3d:
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
                 else: fitilhos_brancos_tubos += pacotes_fitilho
 
-        # TUBOS E MARCENARIA INTELIGENTES
         total_metros_tubo = sum(metragem_tubos_por_cor.values())
         if total_metros_tubo > 0:
             qtd_barras_6m = math.ceil(total_metros_tubo / 6.0)
@@ -704,9 +699,9 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("MARCENARIA", "Chapa de Compensado 18mm", "2,20x1,10m", "", chapas_compensado)
 
         # ---------------------------------------------------------
-        # MOTOR DE COMPOSIÇÃO DE MATERIAIS - A EXPLOSÃO
+        # MOTOR DE COMPOSIÇÃO - EXPLOSÃO COM HERANÇA DE COR
         # ---------------------------------------------------------
-        for cod_peca, qtd_peca in contagem_codigos_oficiais.items():
+        for (cod_peca, cor_peca), qtd_peca in contagem_codigos_oficiais.items():
             if cod_peca in dict_composicao:
                 receita = dict_composicao[cod_peca]
                 for mat in receita:
@@ -714,17 +709,24 @@ if arquivos_excel and arquivo_csv_3d:
                     qtd_mat = mat['qtd'] * qtd_peca
                     unidade = mat['unidade']
                     
+                    cor_final = ""
+                    # Regra de Ouro: Lonas herdam a cor nativa da peça no projeto 3D
+                    if "LONA" in nome_mat:
+                        if cor_peca and cor_peca.upper() not in ["SEM COR", "MATERIAL"]:
+                            cor_final = cor_peca
+                            
+                    nome_final_mat = mat['material'].title()
+                    
                     if "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P."):
-                        add_compra("PARAFUSOS E FERRAGENS", mat['material'].title(), unidade, "", qtd_mat, True)
+                        add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, "", qtd_mat, True)
                     elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
-                        add_compra("PARAFUSOS E FERRAGENS", mat['material'].title(), unidade, "", qtd_mat, True)
+                        add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, "", qtd_mat, True)
                     elif "COMPENSADO" in nome_mat or "MDF" in nome_mat or "EUCATEX" in nome_mat:
                         pass
                     elif "ESPUMA CILINDRICA" in nome_mat or "POLIURETANO" in nome_mat:
-                        # Ignora para não duplicar com a regra nativa já consolidada acima
                         pass
                     else:
-                        add_compra("MATÉRIAS PRIMAS", mat['material'].title(), unidade, "", qtd_mat, True)
+                        add_compra("MATÉRIAS PRIMAS", nome_final_mat, unidade, cor_final, qtd_mat, True)
 
         # (6) CHECK LIST SUPER CATEGORIZADO
         checklist_cat = {}
@@ -790,11 +792,8 @@ if arquivos_excel and arquivo_csv_3d:
                 for cat, dados_cat in relatorio.items():
                     if cat in ["PARAFUSOS", "CHECK LIST DE EXPEDIÇÃO", "LISTA DE COMPRAS"]: continue
                     if 'agregados' in dados_cat:
-                        qtd_na_aba = {}
                         for chv, qtd in dados_cat['agregados'].items():
                             n_limpo = normalizar_nome_cruzamento(chv[0])
-                            qtd_na_aba[n_limpo] = qtd_na_aba.get(n_limpo, 0) + qtd
-                        for n_limpo, qtd in qtd_na_aba.items():
                             contagem_projeto[n_limpo] = max(contagem_projeto.get(n_limpo, 0), qtd)
                 
                 for _, row_p in df_paraf_calc.iterrows():
@@ -847,7 +846,6 @@ if arquivos_excel and arquivo_csv_3d:
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
             add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
 
-        # Arredondando pra cima tudo que for float no consolidador final e removendo os zerados/vazios
         for cat, itens in consolidador_compras.items():
             chaves_para_remover = []
             for k, v in itens.items():
