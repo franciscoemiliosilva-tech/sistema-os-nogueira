@@ -159,7 +159,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
                 
-                # Se for número flutuante limpo, mas na verdade inteiro, formata pra inteiro
+                # Se for número flutuante limpo, formata pra inteiro visualmente
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -277,17 +277,82 @@ with col_u2: arquivo_csv_3d = st.file_uploader("2. Projeto 3D (.csv)", type=["cs
 
 if arquivos_excel and arquivo_csv_3d:
     try:
-        # Tenta achar quem é Mestre e quem é Composição
-        arquivo_mestre = None
-        arquivo_comp = None
-        
+        # --- NOVO MOTOR DE LEITURA BLINDADO (Aba por Aba) ---
+        banco_dados = {}
+        df_paraf = None
+        df_comp = None
+
         for f in arquivos_excel:
-            nome_f = f.name.lower()
-            if "comp" in nome_f: arquivo_comp = f
-            else: arquivo_mestre = f
-            
-        if not arquivo_mestre: arquivo_mestre = arquivos_excel[0]
+            xls = pd.ExcelFile(f)
+            for sheet_name in xls.sheet_names:
+                df_sheet = pd.read_excel(xls, sheet_name=sheet_name, header=None)
+                sheet_str = df_sheet.astype(str).to_string().upper()
+                s_name = sheet_name.upper()
+                
+                # Identifica Composição pelas palavras-chave exclusivas ou pelo nome da aba
+                if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
+                    df_comp = df_sheet
+                # Identifica Parafusos (Aba que tem FITILHO e TERMINAL)
+                elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str):
+                    df_paraf = df_sheet
+                # Identifica Mestre e consolida o banco de dados
+                else:
+                    cat_atual = "ITENS GERAIS"
+                    for _, row in df_sheet.iterrows():
+                        for val in row:
+                            val_str = str(val).strip()
+                            if pd.notna(val) and val_str != '':
+                                if "=" in val_str and len(val_str.split("=")) >= 2:
+                                    parts = val_str.split("=")
+                                    sku = re.sub(r'([A-Z])O(\d)', r'\g<1>0\g<2>', parts[1].strip().upper().replace('_', ''))
+                                    if "CONEXAO_" in sku: sku = parts[1].strip().upper() 
+                                    banco_dados[sku] = {'nome': parts[0].strip(), 'cat': cat_atual}
+                                elif "DESTINO" not in val_str.upper() and "ITENS" not in val_str.upper() and len(val_str) < 40:
+                                    cat_atual = re.sub(r'\s+', ' ', val_str).strip().upper()
+
+        banco_dados_seguro = {
+            'CONEXAO_BASE': 'Base', 'CONEXAO_COTOVELO': 'Cotovelo', 
+            'CONEXAO_LUVA': 'Luva', 'CONEXAO_PUNHO': 'Punho',
+            'CONEXAO_T_4_SAIDAS': 'T 4 Saídas', 'CONEXAO_CRUZETA': 'Cruzeta',
+            'CONEXAO_ARTICULADA': 'Articulada'
+        }
         
+        # --- EXTRATOR DA COMPOSIÇÃO DE MATERIAIS ---
+        dict_composicao = {}
+        if df_comp is not None:
+            codigo_atual = None
+            for index, row in df_comp.iterrows():
+                col1 = str(row[1]).strip() if pd.notna(row[1]) else ""
+                col2 = row[2] if pd.notna(row[2]) else None
+                col3 = str(row[3]).strip() if pd.notna(row[3]) else ""
+                
+                # Pula linhas 100% vazias
+                if col1 == "" and pd.isna(row[2]):
+                    codigo_atual = None
+                    continue
+                
+                # Tenta capturar o código oficial do cabeçalho (Ex: Escadinha=A17_)
+                match_cod = re.search(r'=([A-Z][0-9O]{2})', col1.upper())
+                if match_cod:
+                    codigo_atual = match_cod.group(1).replace('O', '0')
+                    dict_composicao[codigo_atual] = []
+                    
+                # Extrai a receita de material vinculada ao código atual
+                elif codigo_atual is not None and col1 != "":
+                    try:
+                        q_val = float(col2)
+                    except:
+                        q_val = 0.0
+                    
+                    if q_val > 0:
+                        dict_composicao[codigo_atual].append({
+                            "material": col1,
+                            "qtd": q_val,
+                            "unidade": col3
+                        })
+        else:
+            st.warning("⚠️ Nenhuma aba de Composição foi encontrada nos arquivos Excel. As Matérias Primas não serão geradas.")
+
         # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
         df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
         
@@ -316,70 +381,6 @@ if arquivos_excel and arquivo_csv_3d:
 
         cliente_final = cliente_manual if cliente_manual else (cliente_csv if cliente_csv else "NÃO INFORMADO")
         projeto_final = projeto_manual if projeto_manual else (projeto_csv if projeto_csv else "-")
-
-        # (1) LEITURA DO BANCO DE DADOS EXCEL (Mestre)
-        xls = pd.ExcelFile(arquivo_mestre)
-        banco_dados = {}
-        if len(xls.sheet_names) > 0:
-            df_aba = pd.read_excel(xls, sheet_name=0, header=None)
-            cat_atual = "ITENS GERAIS"
-            for _, row in df_aba.iterrows():
-                for val in row:
-                    val_str = str(val).strip()
-                    if pd.notna(val) and val_str != '':
-                        if "=" in val_str:
-                            parts = val_str.split("=")
-                            sku = re.sub(r'([A-Z])O(\d)', r'\g<1>0\g<2>', parts[1].strip().upper().replace('_', ''))
-                            if "CONEXAO_" in sku: sku = parts[1].strip().upper() 
-                            banco_dados[sku] = {'nome': parts[0].strip(), 'cat': cat_atual}
-                        elif "DESTINO" not in val_str.upper() and "ITENS" not in val_str.upper():
-                            cat_atual = re.sub(r'\s+', ' ', val_str).strip().upper()
-
-        banco_dados_seguro = {
-            'CONEXAO_BASE': 'Base', 'CONEXAO_COTOVELO': 'Cotovelo', 
-            'CONEXAO_LUVA': 'Luva', 'CONEXAO_PUNHO': 'Punho',
-            'CONEXAO_T_4_SAIDAS': 'T 4 Saídas', 'CONEXAO_CRUZETA': 'Cruzeta',
-            'CONEXAO_ARTICULADA': 'Articulada'
-        }
-        
-        # (1.5) LEITURA DA ABA DE COMPOSIÇÃO
-        dict_composicao = {}
-        if arquivo_comp:
-            try:
-                xls_comp = pd.ExcelFile(arquivo_comp)
-                df_comp = pd.read_excel(xls_comp, sheet_name=0, header=None)
-                
-                codigo_atual = None
-                for index, row in df_comp.iterrows():
-                    col1 = str(row[1]).strip() if pd.notna(row[1]) else ""
-                    col2 = row[2] if pd.notna(row[2]) else None
-                    col3 = str(row[3]).strip() if pd.notna(row[3]) else ""
-                    
-                    if col1 == "" and col2 is None:
-                        codigo_atual = None
-                        continue
-                    
-                    # Achou um cabeçalho (ex: Escadinha=A17_)
-                    if col2 is None and col1 != "":
-                        if "=" in col1:
-                            codigo_atual = re.sub(r'([A-Z])O(\d)', r'\g<1>0\g<2>', col1.split("=")[1].strip().upper().replace('_', ''))
-                            dict_composicao[codigo_atual] = []
-                        else:
-                            codigo_atual = None
-                    
-                    # Achou um material dentro do cabeçalho
-                    elif codigo_atual is not None and col1 != "":
-                        try:
-                            q_val = float(col2)
-                        except:
-                            q_val = 0.0
-                        dict_composicao[codigo_atual].append({
-                            "material": col1,
-                            "qtd": q_val,
-                            "unidade": col3
-                        })
-            except Exception as e:
-                st.warning(f"Aviso: Não foi possível ler a planilha de composição. Erro: {e}")
 
         # (2) PROCESSAMENTO PRINCIPAL DO 3D
         items_parsed = []
@@ -436,7 +437,7 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                # Apenas armazena as cores. O cálculo numérico ignorará as dimensões deste bloco do 3D.
+                # O motor agora apenas coleta a cor. A matemática de área do bloco foi DESTRUÍDA aqui.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -646,18 +647,24 @@ if arquivos_excel and arquivo_csv_3d:
             
         # ---------------------------------------------------------
         # O CÁLCULO EXATO DAS BOLINHAS (BASEADO NA SOMA DE TODAS AS PLACAS DE EVA)
+        # --- BLINDADO: NUNCA MAIS ALTERAR ESTA REGRA! ---
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
+            # 1. Pega a Área Total do EVA gerado no projeto
             area_base_bolinhas = sum(area_eva_por_cor.values())
                 
+            # 2. Divide pela Chapa Nogueira e Multiplica por 1.5
             area_placa_eva = 4.2025
             qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
             area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
+            
             total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
+            
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
+            
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
@@ -762,18 +769,18 @@ if arquivos_excel and arquivo_csv_3d:
         if "PARAFUSOS" not in relatorio: relatorio["PARAFUSOS"] = {}
         if 'agregados' not in relatorio["PARAFUSOS"]: relatorio["PARAFUSOS"]['agregados'] = {}
 
-        if len(xls.sheet_names) > 1:
+        if df_paraf is not None:
             try:
-                df_temp = pd.read_excel(xls, sheet_name=1, header=None)
+                df_paraf_calc = df_paraf.copy()
                 header_idx = 0
-                for idx, row_temp in df_temp.iterrows():
+                for idx, row_temp in df_paraf_calc.iterrows():
                     if str(row_temp[0]).strip().upper() == "ITENS":
                         header_idx = idx
                         break
                 
-                df_paraf = pd.read_excel(xls, sheet_name=1, header=header_idx)
-                df_paraf = df_paraf.fillna(0)
-                col_itens = df_paraf.columns[0]
+                df_paraf_calc.columns = df_paraf_calc.iloc[header_idx]
+                df_paraf_calc = df_paraf_calc[header_idx+1:].fillna(0)
+                col_itens = df_paraf_calc.columns[0]
                 
                 contagem_projeto = {}
                 for item in items_parsed:
@@ -790,13 +797,13 @@ if arquivos_excel and arquivo_csv_3d:
                         for n_limpo, qtd in qtd_na_aba.items():
                             contagem_projeto[n_limpo] = max(contagem_projeto.get(n_limpo, 0), qtd)
                 
-                for _, row_p in df_paraf.iterrows():
+                for _, row_p in df_paraf_calc.iterrows():
                     item_plan = normalizar_nome_cruzamento(row_p.get(col_itens, ''))
                     if not item_plan or item_plan == '0' or item_plan == 'NAN': continue
                     qtd_no_projeto = contagem_projeto.get(item_plan, 0)
                     
                     if qtd_no_projeto > 0:
-                        for col_p in df_paraf.columns[2:]:
+                        for col_p in df_paraf_calc.columns[2:]:
                             if "Unnamed" in str(col_p): continue 
                             val_p = row_p[col_p]
                             try: v_num = float(val_p)
@@ -840,10 +847,16 @@ if arquivos_excel and arquivo_csv_3d:
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
             add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
 
+        # Arredondando pra cima tudo que for float no consolidador final e removendo os zerados/vazios
         for cat, itens in consolidador_compras.items():
+            chaves_para_remover = []
             for k, v in itens.items():
                 if isinstance(v, float):
                     consolidador_compras[cat][k] = math.ceil(v)
+                if consolidador_compras[cat][k] == 0:
+                    chaves_para_remover.append(k)
+            for k in chaves_para_remover:
+                del consolidador_compras[cat][k]
                     
         relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = consolidador_compras
 
@@ -896,12 +909,13 @@ if arquivos_excel and arquivo_csv_3d:
                                 st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
                         if 'agregados_por_categoria' in relatorio[cat]:
                             for subcat in sorted(relatorio[cat]['agregados_por_categoria'].keys()):
-                                st.markdown(f"**{subcat}**")
-                                for chave in sorted(relatorio[cat]['agregados_por_categoria'][subcat].keys(), key=lambda x: x[0]):
-                                    qtd = relatorio[cat]['agregados_por_categoria'][subcat][chave]
-                                    med_str = f" {chave[1]}" if chave[1] else ""
-                                    cor_str = f" {chave[2]}" if chave[2] else ""
-                                    st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
+                                if len(relatorio[cat]['agregados_por_categoria'][subcat]) > 0:
+                                    st.markdown(f"**{subcat}**")
+                                    for chave in sorted(relatorio[cat]['agregados_por_categoria'][subcat].keys(), key=lambda x: x[0]):
+                                        qtd = relatorio[cat]['agregados_por_categoria'][subcat][chave]
+                                        med_str = f" {chave[1]}" if chave[1] else ""
+                                        cor_str = f" {chave[2]}" if chave[2] else ""
+                                        st.caption(f"{qtd} - {chave[0]}{med_str}{cor_str}")
 
         st.markdown("---")
         st.subheader("⚠️ Auditoria 3D")
