@@ -118,7 +118,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
         header_html = """
             <tr>
                 <th>ITEM / DESCRIÇÃO</th>
-                <th style="width: 15%;">MEDIDA</th>
+                <th style="width: 15%;"></th>
                 <th style="width: 10%;">QTD</th>
                 <th class="check-col">OK</th>
             </tr>
@@ -144,7 +144,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
         if is_checklist:
             ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
         else:
-            ordem_cats = ["CONEXÕES DE ALUMÍNIO", "ESTOQUE", "PARAFUSOS", "TUBOS KID PLAY", "MARCENARIA", "ROTTO BRASIL", "FIBRA DE VIDRO", "ESPUMAS ESPECIAIS", "ILUMINAÇÃO"]
+            ordem_cats = ["CONEXÕES DE ALUMÍNIO", "ESTOQUE", "PARAFUSOS E FERRAGENS", "MATÉRIAS PRIMAS", "TUBOS KID PLAY", "MARCENARIA", "ROTTO BRASIL", "FIBRA DE VIDRO", "ESPUMAS ESPECIAIS", "ILUMINAÇÃO"]
             
         def sort_cat(c):
             try: return ordem_cats.index(c)
@@ -158,11 +158,20 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
+                
+                # Se for número flutuante limpo, mas na verdade inteiro, formata pra inteiro
+                if isinstance(qtd, float) and qtd.is_integer():
+                    qtd = int(qtd)
+                elif isinstance(qtd, float):
+                    qtd = f"{qtd:.2f}"
+                
                 nome = chave[0]
                 medida = chave[1] if chave[1] else "-"
                 cor = f" ({chave[2]})" if chave[2] else ""
                 linhas_tabela += f'<tr><td>{nome}{cor}</td><td class="center">{medida}</td><td class="center bold">{qtd}</td>{td_ok}</tr>'
-                total_q += qtd
+                
+                try: total_q += float(qtd)
+                except: pass
     else:
         if 'lista_sequencial' in dados:
             for linha in dados['lista_sequencial']:
@@ -176,7 +185,13 @@ def gerar_html_os(categoria, dados, cliente, projeto):
                 medida = chave[1] if chave[1] else ""
                 cor = f" ({chave[2]})" if chave[2] else ""
                 linhas_tabela += f'<tr><td>{nome}{cor}</td><td class="center">{medida}</td><td class="center bold">{qtd}</td>{td_ok}</tr>'
-                total_q += qtd
+                try: total_q += float(qtd)
+                except: pass
+
+    if isinstance(total_q, float) and total_q.is_integer():
+        total_q = int(total_q)
+    elif isinstance(total_q, float):
+        total_q = f"{total_q:.2f}"
 
     html_template = f"""
     <!DOCTYPE html>
@@ -257,12 +272,23 @@ def gerar_html_os(categoria, dados, cliente, projeto):
 
 # --- UPLOAD DE ARQUIVOS ---
 col_u1, col_u2 = st.columns(2)
-with col_u1: arquivo_excel = st.file_uploader("1. Planilhas Mestre e Parafusos (.xlsx)", type=["xlsx"])
+with col_u1: arquivos_excel = st.file_uploader("1. Planilhas (.xlsx) - Suba a MESTRE e a COMPOSIÇÃO", type=["xlsx"], accept_multiple_files=True)
 with col_u2: arquivo_csv_3d = st.file_uploader("2. Projeto 3D (.csv)", type=["csv"])
 
-if arquivo_excel and arquivo_csv_3d:
+if arquivos_excel and arquivo_csv_3d:
     try:
-        # --- LEITURA E SANITIZAÇÃO DE DADOS ---
+        # Tenta achar quem é Mestre e quem é Composição
+        arquivo_mestre = None
+        arquivo_comp = None
+        
+        for f in arquivos_excel:
+            nome_f = f.name.lower()
+            if "comp" in nome_f: arquivo_comp = f
+            else: arquivo_mestre = f
+            
+        if not arquivo_mestre: arquivo_mestre = arquivos_excel[0]
+        
+        # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
         df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
         
         # Filtro Anti-Clone
@@ -291,8 +317,8 @@ if arquivo_excel and arquivo_csv_3d:
         cliente_final = cliente_manual if cliente_manual else (cliente_csv if cliente_csv else "NÃO INFORMADO")
         projeto_final = projeto_manual if projeto_manual else (projeto_csv if projeto_csv else "-")
 
-        # (1) LEITURA DO BANCO DE DADOS EXCEL (Aba 0 = Mestre)
-        xls = pd.ExcelFile(arquivo_excel)
+        # (1) LEITURA DO BANCO DE DADOS EXCEL (Mestre)
+        xls = pd.ExcelFile(arquivo_mestre)
         banco_dados = {}
         if len(xls.sheet_names) > 0:
             df_aba = pd.read_excel(xls, sheet_name=0, header=None)
@@ -315,13 +341,51 @@ if arquivo_excel and arquivo_csv_3d:
             'CONEXAO_T_4_SAIDAS': 'T 4 Saídas', 'CONEXAO_CRUZETA': 'Cruzeta',
             'CONEXAO_ARTICULADA': 'Articulada'
         }
+        
+        # (1.5) LEITURA DA ABA DE COMPOSIÇÃO
+        dict_composicao = {}
+        if arquivo_comp:
+            try:
+                xls_comp = pd.ExcelFile(arquivo_comp)
+                df_comp = pd.read_excel(xls_comp, sheet_name=0, header=None)
+                
+                codigo_atual = None
+                for index, row in df_comp.iterrows():
+                    col1 = str(row[1]).strip() if pd.notna(row[1]) else ""
+                    col2 = row[2] if pd.notna(row[2]) else None
+                    col3 = str(row[3]).strip() if pd.notna(row[3]) else ""
+                    
+                    if col1 == "" and col2 is None:
+                        codigo_atual = None
+                        continue
+                    
+                    # Achou um cabeçalho (ex: Escadinha=A17_)
+                    if col2 is None and col1 != "":
+                        if "=" in col1:
+                            codigo_atual = re.sub(r'([A-Z])O(\d)', r'\g<1>0\g<2>', col1.split("=")[1].strip().upper().replace('_', ''))
+                            dict_composicao[codigo_atual] = []
+                        else:
+                            codigo_atual = None # Se não tiver código =, ignora pra não estragar
+                    
+                    # Achou um material dentro do cabeçalho
+                    elif codigo_atual is not None and col1 != "":
+                        dict_composicao[codigo_atual].append({
+                            "material": col1,
+                            "qtd": float(col2) if pd.notna(col2) else 0.0,
+                            "unidade": col3
+                        })
+            except Exception as e:
+                st.warning(f"Aviso: Não foi possível ler a planilha de composição de forma completa. Erro: {e}")
 
-        # (2) PROCESSAMENTO
+        # (2) PROCESSAMENTO PRINCIPAL DO 3D
         items_parsed = []
         area_eva_por_cor, area_rede_por_cor, area_bolinhas = {}, {}, 0.0
         cores_bolinhas, metragem_tubos_por_cor = set(), {}
         lista_auditoria = [] 
         area_marcenaria_m2 = 0.0
+        
+        # Guardar quantas vezes cada código oficial apareceu para a explosão
+        contagem_codigos_oficiais = {}
         
         for _, row in df_3d.iterrows():
             nome_original = str(row.get('Name', '')).strip().upper()
@@ -330,6 +394,7 @@ if arquivo_excel and arquivo_csv_3d:
             
             nome_amigavel = nome_original
             categoria_peca = "OUTROS"
+            codigo_base = ""
             
             is_conexao_nativa = False
             for chv_conexao, nome_padrao in banco_dados_seguro.items():
@@ -344,6 +409,7 @@ if arquivo_excel and arquivo_csv_3d:
                 if codigo_base in banco_dados:
                     nome_amigavel = padronizar_medidas_maior_menor(banco_dados[codigo_base]['nome'])
                     categoria_peca = banco_dados[codigo_base]['cat']
+                    contagem_codigos_oficiais[codigo_base] = contagem_codigos_oficiais.get(codigo_base, 0) + 1
 
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
@@ -381,6 +447,7 @@ if arquivo_excel and arquivo_csv_3d:
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
+            # Somatório da área de marcenaria APENAS para calcular a chapa base depois
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
@@ -502,13 +569,27 @@ if arquivo_excel and arquivo_csv_3d:
         if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
         if 'agregados_por_categoria' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = {}
         
-        def add_compra(cat_compra, nome, medida, cor, qtd):
-            if cat_compra not in relatorio["LISTA DE COMPRAS"]['agregados_por_categoria']:
-                relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra] = {}
+        # Dicionário mestre da consolidação
+        consolidador_compras = {
+            "ESPUMAS ESPECIAIS": {},
+            "ILUMINAÇÃO": {},
+            "CONEXÕES DE ALUMÍNIO": {},
+            "ROTTO BRASIL": {},
+            "FIBRA DE VIDRO": {},
+            "ESTOQUE": {},
+            "TUBOS KID PLAY": {},
+            "MARCENARIA": {},
+            "PARAFUSOS E FERRAGENS": {},
+            "MATÉRIAS PRIMAS": {}
+        }
+        
+        def add_compra(cat_compra, nome, medida, cor, qtd, is_float=False):
+            if cat_compra not in consolidador_compras:
+                consolidador_compras[cat_compra] = {}
             chave = (nome, medida, cor)
-            if chave not in relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra]:
-                relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra][chave] = 0
-            relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'][cat_compra][chave] += qtd
+            if chave not in consolidador_compras[cat_compra]:
+                consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
+            consolidador_compras[cat_compra][chave] += qtd
 
         # ---------------------------------------------------------
         # ESPUMAS ESPECIAIS (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
@@ -535,28 +616,23 @@ if arquivo_excel and arquivo_csv_3d:
                         espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += q
 
         for esp_nome, esp_qtd in espumas_calc.items():
-            if esp_qtd > 0:
-                add_compra("ESPUMAS ESPECIAIS", esp_nome, "", "", esp_qtd)
+            if esp_qtd > 0: add_compra("ESPUMAS ESPECIAIS", esp_nome, "", "", esp_qtd)
                 
         if (qtd_curva_360 - 1) > 0:
             add_compra("ILUMINAÇÃO", "Holofote para Curva", "", "", qtd_curva_360 - 1)
 
-        # 2. CONEXÕES DE ALUMÍNIO
         if "CONEXÕES DE ALUMÍNIO" in relatorio and 'agregados' in relatorio["CONEXÕES DE ALUMÍNIO"]:
             for chv, qtd in relatorio["CONEXÕES DE ALUMÍNIO"]['agregados'].items():
                 add_compra("CONEXÕES DE ALUMÍNIO", chv[0], chv[1], chv[2], qtd)
 
-        # 3. ROTTO BRASIL
         if "ROTTO BRASIL" in relatorio and 'agregados' in relatorio["ROTTO BRASIL"]:
             for chv, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
                 add_compra("ROTTO BRASIL", chv[0], chv[1], chv[2], qtd)
 
-        # 4. FIBRA DE VIDRO
         if "FIBRA DE VIDRO" in relatorio and 'agregados' in relatorio["FIBRA DE VIDRO"]:
             for chv, qtd in relatorio["FIBRA DE VIDRO"]['agregados'].items():
                 add_compra("FIBRA DE VIDRO", chv[0], chv[1], chv[2], qtd)
 
-        # 5. ESTOQUE
         for cor, area in area_eva_por_cor.items():
             qtd_eva = math.ceil(area / 3.065)
             relatorio["ESTOQUE"]['agregados'][("Placa(s) de EVA", "", cor)] = qtd_eva
@@ -574,13 +650,10 @@ if arquivo_excel and arquivo_csv_3d:
             qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
             area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
-            
             total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
-            
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
-            
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
@@ -600,7 +673,6 @@ if arquivo_excel and arquivo_csv_3d:
         for cor, metros in metragem_tubos_por_cor.items():
             pacotes_iso = math.ceil((metros * 1.25) / 64.0)
             pacotes_fitilho = math.ceil(metros * 0.08)
-            
             if pacotes_iso > 0: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Isotubo", "", cor)] = pacotes_iso
                 add_compra("ESTOQUE", "Pacote(s) de Isotubo", "", cor, pacotes_iso)
@@ -609,16 +681,37 @@ if arquivo_excel and arquivo_csv_3d:
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
                 else: fitilhos_brancos_tubos += pacotes_fitilho
 
-        # 6. TUBOS KID PLAY (Soma Total p/ Barras de 6m)
+        # TUBOS E MARCENARIA INTELIGENTES
         total_metros_tubo = sum(metragem_tubos_por_cor.values())
         if total_metros_tubo > 0:
             qtd_barras_6m = math.ceil(total_metros_tubo / 6.0)
-            add_compra("TUBOS KID PLAY", "Tubo de Kid Play (Barras de 6m)", "", "", qtd_barras_6m)
+            add_compra("TUBOS KID PLAY", "Tubo de Kid Play", "Barras de 6m", "", qtd_barras_6m)
 
-        # 7. MARCENARIA (Conversão para Chapas 2,20 x 1,10)
         if area_marcenaria_m2 > 0:
             chapas_compensado = math.ceil(area_marcenaria_m2 / 2.42)
             add_compra("MARCENARIA", "Chapa de Compensado 18mm", "2,20x1,10m", "", chapas_compensado)
+
+        # ---------------------------------------------------------
+        # MOTOR DE COMPOSIÇÃO DE MATERIAIS - A EXPLOSÃO
+        # ---------------------------------------------------------
+        for cod_peca, qtd_peca in contagem_codigos_oficiais.items():
+            if cod_peca in dict_composicao:
+                receita = dict_composicao[cod_peca]
+                for mat in receita:
+                    nome_mat = mat['material'].upper()
+                    qtd_mat = mat['qtd'] * qtd_peca
+                    unidade = mat['unidade']
+                    
+                    # Filtra em que aba o material vai cair na Lista de Compras
+                    if "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P."):
+                        add_compra("PARAFUSOS E FERRAGENS", mat['material'].title(), unidade, "", qtd_mat, True)
+                    elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
+                        add_compra("PARAFUSOS E FERRAGENS", mat['material'].title(), unidade, "", qtd_mat, True)
+                    elif "COMPENSADO" in nome_mat or "MDF" in nome_mat or "EUCATEX" in nome_mat:
+                        # Pula, pois o motor inteligente principal já tratou a área de marcenaria (se você quiser explodir madeiras das peças de dentro, comente este continue)
+                        pass
+                    else:
+                        add_compra("MATÉRIAS PRIMAS", mat['material'].title(), unidade, "", qtd_mat, True)
 
         # (6) CHECK LIST SUPER CATEGORIZADO
         checklist_cat = {}
@@ -628,7 +721,6 @@ if arquivo_excel and arquivo_csv_3d:
             if chave not in checklist_cat[cat_nome]: checklist_cat[cat_nome][chave] = 0
             checklist_cat[cat_nome][chave] += qtd
 
-        # A "LISTA DE COMPRAS" NÃO ENTRA NESTA LISTA DE CHECKLIST
         cats_to_check = ["ATIVIDADES KID PLAY", "SERRALHERIA", "ROTTO BRASIL", "IMPRESSÃO", "FIBRA DE VIDRO", "ESTOQUE", "COSTURA"]
         for cat_c in cats_to_check:
             if cat_c in relatorio and 'agregados' in relatorio[cat_c]:
@@ -639,7 +731,6 @@ if arquivo_excel and arquivo_csv_3d:
                     if cat_c == "COSTURA" and any(x in nome_chk_u for x in ["SINUOSO 1", "SINUOSO 2", "RAMPA DE CINTA", "TURBILHÃO"]): continue
                     if any(x in nome_chk_u for x in ["CINTA DE PROTEÇÃO", "PROTEÇÃO DE CURVA", "HOLOFOTE", "CAIXA DE PARAFUSOS"]): continue
                     if "QUADRO" in nome_chk_u and any(x in nome_chk_u for x in ["PONTE", "PISO SINUOSO"]): continue
-                    # Impede duplicação de adesivados no Checklist (exceção para a Régua)
                     if cat_c == "IMPRESSÃO" and "RÉGUA" not in nome_chk_u: continue
                         
                     add_check(cat_c, nome_chk, chv[1], chv[2], q)
@@ -660,7 +751,7 @@ if arquivo_excel and arquivo_csv_3d:
             for k, v in c_dict.items():
                 relatorio["CHECK LIST DE EXPEDIÇÃO"]['agregados'][k] = v
 
-        # (7) MOTOR DE PARAFUSOS E REGRAS EXTRAS (Aba 1 = Parafusos)
+        # (7) MOTOR DE PARAFUSOS DO CLIENTE
         fitilhos_planilha_unidades = 0
         if "PARAFUSOS" not in relatorio: relatorio["PARAFUSOS"] = {}
         if 'agregados' not in relatorio["PARAFUSOS"]: relatorio["PARAFUSOS"]['agregados'] = {}
@@ -717,19 +808,19 @@ if arquivo_excel and arquivo_csv_3d:
                                         relatorio["PARAFUSOS"]['agregados'][chv] = 0
                                     relatorio["PARAFUSOS"]['agregados'][chv] += total_paraf
                                     
-                                    # Transporta para LISTA DE COMPRAS travando os terminais de calandra
+                                    # Transporta para LISTA DE COMPRAS travando terminais e consolidando repetições
                                     if "TERMINAL DE CALANDRA" not in nome_p.upper():
-                                        add_compra("PARAFUSOS", nome_p, "", "", total_paraf)
+                                        add_compra("PARAFUSOS E FERRAGENS", nome_p.title(), "UN.", "", float(total_paraf), True)
                                         
             except Exception as ep:
-                st.warning(f"Erro ao ler a tabela de parafusos: {ep}")
+                st.warning(f"Erro ao ler a tabela de parafusos de montagem: {ep}")
 
         relatorio["PARAFUSOS"]['agregados'][("Bujão de Kid Play", "", "")] = 30
-        add_compra("PARAFUSOS", "Bujão de Kid Play", "", "", 30)
+        add_compra("PARAFUSOS E FERRAGENS", "Bujão De Kid Play", "UN.", "", 30.0, True)
         
         if total_fardos_rede > 0:
             relatorio["PARAFUSOS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
-            add_compra("PARAFUSOS", "Cordão", "", "", total_fardos_rede)
+            add_compra("ESTOQUE", "Cordão", "", "", total_fardos_rede)
 
         pacotes_extra_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
         if pacotes_extra_planilha > 0:
@@ -738,11 +829,20 @@ if arquivo_excel and arquivo_csv_3d:
                 
         if fitilhos_brancos_tubos > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
-            add_compra("PARAFUSOS", "Pacote(s) de Fitilho", "", "Branco", fitilhos_brancos_tubos)
+            add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Branco", fitilhos_brancos_tubos)
             
         if fitilhos_pretos_tubos > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
-            add_compra("PARAFUSOS", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
+            add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
+
+        # Arredondando pra cima tudo que for float no consolidador final
+        for cat, itens in consolidador_compras.items():
+            for k, v in itens.items():
+                if isinstance(v, float):
+                    consolidador_compras[cat][k] = math.ceil(v)
+                    
+        # Injetando o consolidador oficial na Lista de Compras
+        relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = consolidador_compras
 
         # --- 8. CRIAÇÃO DO NOVO PAINEL DASHBOARD (CARDS) ---
         st.markdown("### 🖨️ Painel de Produção (Ordens de Serviço)")
