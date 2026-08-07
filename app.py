@@ -159,7 +159,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
                 
-                # Se for número flutuante limpo, mas na verdade inteiro, formata pra inteiro
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -365,17 +364,21 @@ if arquivos_excel and arquivo_csv_3d:
                             codigo_atual = re.sub(r'([A-Z])O(\d)', r'\g<1>0\g<2>', col1.split("=")[1].strip().upper().replace('_', ''))
                             dict_composicao[codigo_atual] = []
                         else:
-                            codigo_atual = None # Se não tiver código =, ignora pra não estragar
+                            codigo_atual = None
                     
                     # Achou um material dentro do cabeçalho
                     elif codigo_atual is not None and col1 != "":
+                        try:
+                            q_val = float(col2)
+                        except:
+                            q_val = 0.0
                         dict_composicao[codigo_atual].append({
                             "material": col1,
-                            "qtd": float(col2) if pd.notna(col2) else 0.0,
+                            "qtd": q_val,
                             "unidade": col3
                         })
             except Exception as e:
-                st.warning(f"Aviso: Não foi possível ler a planilha de composição de forma completa. Erro: {e}")
+                st.warning(f"Aviso: Não foi possível ler a planilha de composição. Erro: {e}")
 
         # (2) PROCESSAMENTO PRINCIPAL DO 3D
         items_parsed = []
@@ -384,7 +387,6 @@ if arquivos_excel and arquivo_csv_3d:
         lista_auditoria = [] 
         area_marcenaria_m2 = 0.0
         
-        # Guardar quantas vezes cada código oficial apareceu para a explosão
         contagem_codigos_oficiais = {}
         
         for _, row in df_3d.iterrows():
@@ -569,7 +571,6 @@ if arquivos_excel and arquivo_csv_3d:
         if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
         if 'agregados_por_categoria' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = {}
         
-        # Dicionário mestre da consolidação
         consolidador_compras = {
             "ESPUMAS ESPECIAIS": {},
             "ILUMINAÇÃO": {},
@@ -591,33 +592,6 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
-        # ---------------------------------------------------------
-        # ESPUMAS ESPECIAIS (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
-        # ---------------------------------------------------------
-        espumas_calc = {
-            "ESPUMA CILINDRICA 20X20X60CM": 0,
-            "ESPUMA CILINDRICA 26X26X60CM": 0,
-            "ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM": 0,
-            "ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM": 0
-        }
-        
-        if "ATIVIDADES KID PLAY" in relatorio and 'agregados' in relatorio["ATIVIDADES KID PLAY"]:
-            for chv, q in relatorio["ATIVIDADES KID PLAY"]['agregados'].items():
-                nome_k = chv[0].upper()
-                if "SACO DE BOXE" in nome_k:
-                    if "GRAND" in nome_k or " G " in nome_k or nome_k.endswith(" G"):
-                        espumas_calc["ESPUMA CILINDRICA 26X26X60CM"] += q
-                    else:
-                        espumas_calc["ESPUMA CILINDRICA 20X20X60CM"] += q
-                if "CORCOVA" in nome_k:
-                    if "TRIANG" in nome_k or "TRIÂNG" in nome_k:
-                        espumas_calc["ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM"] += q
-                    else:
-                        espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += q
-
-        for esp_nome, esp_qtd in espumas_calc.items():
-            if esp_qtd > 0: add_compra("ESPUMAS ESPECIAIS", esp_nome, "", "", esp_qtd)
-                
         if (qtd_curva_360 - 1) > 0:
             add_compra("ILUMINAÇÃO", "Holofote para Curva", "", "", qtd_curva_360 - 1)
 
@@ -647,7 +621,7 @@ if arquivos_excel and arquivo_csv_3d:
             
         if area_bolinhas > 0:
             area_placa_eva = 4.2025
-            qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
+            qtd_placas_ref = math.ceil(area_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
             area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
             total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
@@ -702,14 +676,14 @@ if arquivos_excel and arquivo_csv_3d:
                     qtd_mat = mat['qtd'] * qtd_peca
                     unidade = mat['unidade']
                     
-                    # Filtra em que aba o material vai cair na Lista de Compras
                     if "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P."):
                         add_compra("PARAFUSOS E FERRAGENS", mat['material'].title(), unidade, "", qtd_mat, True)
                     elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
                         add_compra("PARAFUSOS E FERRAGENS", mat['material'].title(), unidade, "", qtd_mat, True)
                     elif "COMPENSADO" in nome_mat or "MDF" in nome_mat or "EUCATEX" in nome_mat:
-                        # Pula, pois o motor inteligente principal já tratou a área de marcenaria (se você quiser explodir madeiras das peças de dentro, comente este continue)
                         pass
+                    elif "ESPUMA CILINDRICA" in nome_mat or "POLIURETANO" in nome_mat:
+                        add_compra("ESPUMAS ESPECIAIS", mat['material'].upper(), unidade, "", qtd_mat, True)
                     else:
                         add_compra("MATÉRIAS PRIMAS", mat['material'].title(), unidade, "", qtd_mat, True)
 
@@ -808,7 +782,6 @@ if arquivos_excel and arquivo_csv_3d:
                                         relatorio["PARAFUSOS"]['agregados'][chv] = 0
                                     relatorio["PARAFUSOS"]['agregados'][chv] += total_paraf
                                     
-                                    # Transporta para LISTA DE COMPRAS travando terminais e consolidando repetições
                                     if "TERMINAL DE CALANDRA" not in nome_p.upper():
                                         add_compra("PARAFUSOS E FERRAGENS", nome_p.title(), "UN.", "", float(total_paraf), True)
                                         
@@ -835,13 +808,11 @@ if arquivos_excel and arquivo_csv_3d:
             relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
             add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
 
-        # Arredondando pra cima tudo que for float no consolidador final
         for cat, itens in consolidador_compras.items():
             for k, v in itens.items():
                 if isinstance(v, float):
                     consolidador_compras[cat][k] = math.ceil(v)
                     
-        # Injetando o consolidador oficial na Lista de Compras
         relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = consolidador_compras
 
         # --- 8. CRIAÇÃO DO NOVO PAINEL DASHBOARD (CARDS) ---
