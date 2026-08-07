@@ -159,6 +159,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
                 
+                # Se for número flutuante limpo, formata pra inteiro visualmente
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -450,6 +451,7 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
+                # O motor agora apenas coleta a cor. A matemática de área do bloco foi DESTRUÍDA aqui.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -459,6 +461,7 @@ if arquivos_excel and arquivo_csv_3d:
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
+            # Somatório da área de marcenaria APENAS para calcular a chapa base depois
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
@@ -601,6 +604,10 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
+        # ---------------------------------------------------------
+        # ESPUMAS ESPECIAIS E HOLOFOTES
+        # (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
+        # ---------------------------------------------------------
         espumas_calc = {
             "ESPUMA CILINDRICA 20X20X60CM": 0,
             "ESPUMA CILINDRICA 26X26X60CM": 0,
@@ -652,16 +659,26 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Fardo(s) de Rede", "", cor, fardos)
             total_fardos_rede += fardos
             
+        # ---------------------------------------------------------
+        # O CÁLCULO EXATO DAS BOLINHAS (BASEADO NA SOMA DE TODAS AS PLACAS DE EVA)
+        # --- BLINDADO: NUNCA MAIS ALTERAR ESTA REGRA! ---
+        # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
+            # 1. Pega a Área Total do EVA gerado no projeto
             area_base_bolinhas = sum(area_eva_por_cor.values())
+                
+            # 2. Divide pela Chapa Nogueira e Multiplica por 1.5
             area_placa_eva = 4.2025
             qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
             area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
+            
             total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
+            
             if total_pacotes == 0: total_pacotes = 1
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
+            
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
@@ -673,6 +690,7 @@ if arquivos_excel and arquivo_csv_3d:
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
                         add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
+        # ---------------------------------------------------------
 
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
@@ -689,6 +707,7 @@ if arquivos_excel and arquivo_csv_3d:
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
                 else: fitilhos_brancos_tubos += pacotes_fitilho
 
+        # TUBOS E MARCENARIA INTELIGENTES
         total_metros_tubo = sum(metragem_tubos_por_cor.values())
         if total_metros_tubo > 0:
             qtd_barras_6m = math.ceil(total_metros_tubo / 6.0)
@@ -710,8 +729,8 @@ if arquivos_excel and arquivo_csv_3d:
                     unidade = mat['unidade']
                     
                     cor_final = ""
-                    # Regra de Ouro: Lonas herdam a cor nativa da peça no projeto 3D
-                    if "LONA" in nome_mat:
+                    # Regra de Ouro: Lonas e Cintos herdam a cor nativa da peça no projeto 3D
+                    if "LONA" in nome_mat or "CINTO" in nome_mat:
                         if cor_peca and cor_peca.upper() not in ["SEM COR", "MATERIAL"]:
                             cor_final = cor_peca
                             
@@ -812,6 +831,7 @@ if arquivos_excel and arquivo_csv_3d:
                                 total_paraf = int(math.ceil(v_num * qtd_no_projeto))
                                 nome_p = str(col_p).strip()
                                 
+                                # Intercepta Fitilhos da planilha e joga na matemática de pacotes
                                 if "FITILHO" in normalizar_nome_cruzamento(nome_p):
                                     fitilhos_planilha_unidades += total_paraf
                                 else:
