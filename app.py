@@ -159,6 +159,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
                 
+                # Se for número flutuante limpo, mas na verdade inteiro, formata pra inteiro
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -382,7 +383,7 @@ if arquivos_excel and arquivo_csv_3d:
 
         # (2) PROCESSAMENTO PRINCIPAL DO 3D
         items_parsed = []
-        area_eva_por_cor, area_rede_por_cor, area_bolinhas = {}, {}, 0.0
+        area_eva_por_cor, area_rede_por_cor = {}, {}
         cores_bolinhas, metragem_tubos_por_cor = set(), {}
         lista_auditoria = [] 
         area_marcenaria_m2 = 0.0
@@ -435,12 +436,8 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
+                # Apenas armazena as cores. O cálculo numérico ignorará as dimensões deste bloco do 3D.
                 cores_bolinhas.add(cor_limpa)
-                if max(dims) > 20:
-                    modulos_x = math.ceil(dims[1] / 205.0) if dims[1] > 0 else 1
-                    modulos_y = math.ceil(dims[2] / 205.0) if dims[2] > 0 else 1
-                    area_snappada = (modulos_x * 2.05) * (modulos_y * 2.05)
-                    area_bolinhas += area_snappada
                 continue
                 
             is_impresso = False
@@ -592,6 +589,34 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
+        # ---------------------------------------------------------
+        # ESPUMAS ESPECIAIS E HOLOFOTES
+        # (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
+        # ---------------------------------------------------------
+        espumas_calc = {
+            "ESPUMA CILINDRICA 20X20X60CM": 0,
+            "ESPUMA CILINDRICA 26X26X60CM": 0,
+            "ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM": 0,
+            "ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM": 0
+        }
+        
+        if "ATIVIDADES KID PLAY" in relatorio and 'agregados' in relatorio["ATIVIDADES KID PLAY"]:
+            for chv, q in relatorio["ATIVIDADES KID PLAY"]['agregados'].items():
+                nome_k = chv[0].upper()
+                if "SACO DE BOXE" in nome_k:
+                    if "GRAND" in nome_k or " G " in nome_k or nome_k.endswith(" G"):
+                        espumas_calc["ESPUMA CILINDRICA 26X26X60CM"] += q
+                    else:
+                        espumas_calc["ESPUMA CILINDRICA 20X20X60CM"] += q
+                if "CORCOVA" in nome_k:
+                    if "TRIANG" in nome_k or "TRIÂNG" in nome_k:
+                        espumas_calc["ESPUMA POLIURETANO 7156 - TRIÂNGULO - 80X33X28CM"] += q
+                    else:
+                        espumas_calc["ESPUMA POLIURETANO 7156 - MEIA LUA - 80X33X28CM"] += q
+
+        for esp_nome, esp_qtd in espumas_calc.items():
+            if esp_qtd > 0: add_compra("ESPUMAS ESPECIAIS", esp_nome, "", "", esp_qtd)
+                
         if (qtd_curva_360 - 1) > 0:
             add_compra("ILUMINAÇÃO", "Holofote para Curva", "", "", qtd_curva_360 - 1)
 
@@ -619,9 +644,14 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Fardo(s) de Rede", "", cor, fardos)
             total_fardos_rede += fardos
             
-        if area_bolinhas > 0:
+        # ---------------------------------------------------------
+        # O CÁLCULO EXATO DAS BOLINHAS (BASEADO NA SOMA DE TODAS AS PLACAS DE EVA)
+        # ---------------------------------------------------------
+        if len(cores_bolinhas) > 0:
+            area_base_bolinhas = sum(area_eva_por_cor.values())
+                
             area_placa_eva = 4.2025
-            qtd_placas_ref = math.ceil(area_bolinhas / area_placa_eva)
+            qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
             if qtd_placas_ref == 0: qtd_placas_ref = 1
             area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
             total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
@@ -639,7 +669,8 @@ if arquivos_excel and arquivo_csv_3d:
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
                         add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
-            
+        # ---------------------------------------------------------
+
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
         fitilhos_pretos_tubos = 0
@@ -683,7 +714,8 @@ if arquivos_excel and arquivo_csv_3d:
                     elif "COMPENSADO" in nome_mat or "MDF" in nome_mat or "EUCATEX" in nome_mat:
                         pass
                     elif "ESPUMA CILINDRICA" in nome_mat or "POLIURETANO" in nome_mat:
-                        add_compra("ESPUMAS ESPECIAIS", mat['material'].upper(), unidade, "", qtd_mat, True)
+                        # Ignora para não duplicar com a regra nativa já consolidada acima
+                        pass
                     else:
                         add_compra("MATÉRIAS PRIMAS", mat['material'].title(), unidade, "", qtd_mat, True)
 
