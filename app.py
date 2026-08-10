@@ -159,7 +159,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
                 
-                # Se for número flutuante limpo, formata pra inteiro visualmente
+                # Formata para inteiro visualmente se não houver casas decimais
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -277,6 +277,7 @@ with col_u2: arquivo_csv_3d = st.file_uploader("2. Projeto 3D (.csv)", type=["cs
 
 if arquivos_excel and arquivo_csv_3d:
     try:
+        # Tenta achar quem é Mestre e quem é Composição
         arquivo_mestre = None
         arquivo_comp = None
         
@@ -325,7 +326,7 @@ if arquivos_excel and arquivo_csv_3d:
         cliente_final = cliente_manual if cliente_manual else (cliente_csv if cliente_csv else "NÃO INFORMADO")
         projeto_final = projeto_manual if projeto_manual else (projeto_csv if projeto_csv else "-")
 
-        # --- NOVO MOTOR DE LEITURA BLINDADO (Aba por Aba) ---
+        # --- MOTOR DE LEITURA BLINDADO (Aba por Aba) ---
         banco_dados = {}
         df_paraf = None
         df_comp = None
@@ -424,14 +425,13 @@ if arquivos_excel and arquivo_csv_3d:
                 if codigo_base in banco_dados:
                     nome_amigavel = padronizar_medidas_maior_menor(banco_dados[codigo_base]['nome'])
                     categoria_peca = banco_dados[codigo_base]['cat']
-                    # Agrupa o código + a cor para a herança correta na explosão
                     chave_cod = (codigo_base, cor_limpa)
                     contagem_codigos_oficiais[chave_cod] = contagem_codigos_oficiais.get(chave_cod, 0) + 1
 
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
 
-            # Extração original e intocada das dimensões do 3D
+            # --- EXTRAÇÃO DE DIMENSÕES ---
             w = parse_dim(row.get('Width', 0)); l = parse_dim(row.get('Length', 0)); h = parse_dim(row.get('Height', 0))
             dims = sorted([int(round(w)), int(round(l)), int(round(h))])
             px = parse_dim(row.get('PosX', 0)); py = parse_dim(row.get('PosY', 0)); pz = parse_dim(row.get('PosZ', 0))
@@ -439,9 +439,15 @@ if arquivos_excel and arquivo_csv_3d:
             is_tubo = "TUBOS KID PLAY" in categoria_peca or (not is_conexao_nativa and "T" in nome_original[:2])
             if is_tubo:
                 categoria_peca = "TUBOS KID PLAY"
-                max_dim = max(w, l, h)
-                metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (max_dim / 100.0)
-                # O nome amigável e as dims ficam intocados para focar exatamente no código que vocês criaram no Mestre
+                
+                # CORREÇÃO DEFINITIVA TUBOS:
+                # O sistema extrai estritamente a MAIOR dimensão do tubo que veio do 3D (bounding box).
+                # Não é feito nenhum arredondamento paralelo nem recorte no nome.
+                medida_exata = max(w, l, h) 
+                    
+                dims = [0, 0, medida_exata] # Força a medida exata real para exibição na tela
+                metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (medida_exata / 100.0)
+                nome_amigavel = "Tubo de Kid Play" 
                 
             if "EVA" in nome_amigavel.upper():
                 area_eva_por_cor[cor_limpa] = area_eva_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
@@ -451,7 +457,7 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                # O motor agora apenas coleta a cor. A matemática de área do bloco foi DESTRUÍDA.
+                # Apenas armazena as cores. A área será derivada 100% dos pisos de EVA.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -461,7 +467,6 @@ if arquivos_excel and arquivo_csv_3d:
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
-            # Somatório da área de marcenaria APENAS para calcular a chapa base depois
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
@@ -604,6 +609,9 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
+        # ---------------------------------------------------------
+        # ESPUMAS ESPECIAIS E HOLOFOTES
+        # ---------------------------------------------------------
         espumas_calc = {
             "ESPUMA CILINDRICA 20X20X60CM": 0,
             "ESPUMA CILINDRICA 26X26X60CM": 0,
@@ -656,12 +664,13 @@ if arquivos_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         # ---------------------------------------------------------
-        # O CÁLCULO EXATO DAS BOLINHAS (SOMA DA ÁREA DE EVA m² * 1.50)
-        # BLINDADO PARA USO DE ARREDONDAMENTO MATEMÁTICO (x.49 ou menos arredonda pra baixo)
+        # O CÁLCULO EXATO DAS BOLINHAS - REVISADO E BLINDADO
+        # Regra: Área m2 do EVA gerado x 1.5. Arredonda matematicamente (7.49=7 / 7.50=8)
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
             area_base_bolinhas = sum(area_eva_por_cor.values())
             
+            # Cálculo de pacotes com arredondamento matemático tradicional
             calc_bolinhas = area_base_bolinhas * 1.5
             total_pacotes = int(math.floor(calc_bolinhas + 0.5))
             
@@ -820,6 +829,7 @@ if arquivos_excel and arquivo_csv_3d:
                                 total_paraf = int(math.ceil(v_num * qtd_no_projeto))
                                 nome_p = str(col_p).strip()
                                 
+                                # Troca radical: Tudo que a planilha chamar de Fitilho e Abraçadeira se torna a Abraçadeira Correta
                                 if "FITILHO" in normalizar_nome_cruzamento(nome_p) or "ABRAÇADEIRA" in normalizar_nome_cruzamento(nome_p):
                                     fitilhos_planilha_unidades += total_paraf
                                 else:
@@ -846,7 +856,7 @@ if arquivos_excel and arquivo_csv_3d:
             if tem_rede_preta: fitilhos_pretos_tubos += pacotes_extra_planilha
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
                 
-        # Nomenclatura blindada conforme solicitação
+        # Nomenclatura blindada para Abraçadeira 340x4,8Mm (Substituindo Pacotes de Fitilho)
         if fitilhos_brancos_tubos > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca")] = fitilhos_brancos_tubos
             add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", fitilhos_brancos_tubos)
