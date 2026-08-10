@@ -277,7 +277,6 @@ with col_u2: arquivo_csv_3d = st.file_uploader("2. Projeto 3D (.csv)", type=["cs
 
 if arquivos_excel and arquivo_csv_3d:
     try:
-        # Tenta achar quem é Mestre e quem é Composição
         arquivo_mestre = None
         arquivo_comp = None
         
@@ -432,6 +431,7 @@ if arquivos_excel and arquivo_csv_3d:
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
 
+            # Extração original e intocada das dimensões do 3D
             w = parse_dim(row.get('Width', 0)); l = parse_dim(row.get('Length', 0)); h = parse_dim(row.get('Height', 0))
             dims = sorted([int(round(w)), int(round(l)), int(round(h))])
             px = parse_dim(row.get('PosX', 0)); py = parse_dim(row.get('PosY', 0)); pz = parse_dim(row.get('PosZ', 0))
@@ -439,16 +439,9 @@ if arquivos_excel and arquivo_csv_3d:
             is_tubo = "TUBOS KID PLAY" in categoria_peca or (not is_conexao_nativa and "T" in nome_original[:2])
             if is_tubo:
                 categoria_peca = "TUBOS KID PLAY"
-                
-                # Para evitar os 10cm do bloco de encaixe no 3D, tentamos extrair a medida nominal cravada no NOME do arquivo
-                medida_exata = max(w, l, h) # Backup
-                match_t = re.search(r'\bT\s*0*(\d{2,3})\b', nome_original)
-                if match_t:
-                    medida_exata = float(match_t.group(1))
-                    
-                dims = [0, 0, medida_exata] # Força a medida nominal exata para aparecer correta na tela
-                metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (medida_exata / 100.0)
-                nome_amigavel = "Tubo de Kid Play" 
+                max_dim = max(w, l, h)
+                metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (max_dim / 100.0)
+                # O nome amigável e as dims ficam intocados para focar exatamente no código que vocês criaram no Mestre
                 
             if "EVA" in nome_amigavel.upper():
                 area_eva_por_cor[cor_limpa] = area_eva_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
@@ -458,7 +451,7 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                # Apenas armazena as cores. A área será derivada 100% dos pisos de EVA.
+                # O motor agora apenas coleta a cor. A matemática de área do bloco foi DESTRUÍDA.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -611,10 +604,6 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
-        # ---------------------------------------------------------
-        # ESPUMAS ESPECIAIS E HOLOFOTES
-        # (Lendo direto da aba consolidada ATIVIDADES KID PLAY)
-        # ---------------------------------------------------------
         espumas_calc = {
             "ESPUMA CILINDRICA 20X20X60CM": 0,
             "ESPUMA CILINDRICA 26X26X60CM": 0,
@@ -667,13 +656,15 @@ if arquivos_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         # ---------------------------------------------------------
-        # O CÁLCULO EXATO DAS BOLINHAS (SOMA TOTAL DO PISO DE EVA M²)
+        # O CÁLCULO EXATO DAS BOLINHAS (SOMA DA ÁREA DE EVA m² * 1.50)
+        # BLINDADO PARA USO DE ARREDONDAMENTO MATEMÁTICO (x.49 ou menos arredonda pra baixo)
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
             area_base_bolinhas = sum(area_eva_por_cor.values())
             
-            # Regra Matemática Absoluta e Cravada: Área do EVA * 1.50
-            total_pacotes = int(math.ceil(area_base_bolinhas * 1.5))
+            calc_bolinhas = area_base_bolinhas * 1.5
+            total_pacotes = int(math.floor(calc_bolinhas + 0.5))
+            
             if total_pacotes == 0: total_pacotes = 1
             
             qtd_cores = len(cores_bolinhas)
@@ -855,13 +846,14 @@ if arquivos_excel and arquivo_csv_3d:
             if tem_rede_preta: fitilhos_pretos_tubos += pacotes_extra_planilha
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
                 
+        # Nomenclatura blindada conforme solicitação
         if fitilhos_brancos_tubos > 0: 
-            relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "", "Branca")] = fitilhos_brancos_tubos
-            add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "", "Branca", fitilhos_brancos_tubos)
+            relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca")] = fitilhos_brancos_tubos
+            add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", fitilhos_brancos_tubos)
             
         if fitilhos_pretos_tubos > 0: 
-            relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "", "Preta")] = fitilhos_pretos_tubos
-            add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "", "Preta", fitilhos_pretos_tubos)
+            relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta")] = fitilhos_pretos_tubos
+            add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta", fitilhos_pretos_tubos)
 
         for cat, itens in consolidador_compras.items():
             chaves_para_remover = []
