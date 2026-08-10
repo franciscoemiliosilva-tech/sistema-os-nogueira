@@ -290,7 +290,7 @@ if arquivos_excel and arquivo_csv_3d:
                 
                 if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
                     arquivo_comp = f
-                elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str):
+                elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str) or ("ABRAÇADEIRA" in sheet_str and "TERMINAL" in sheet_str):
                     pass
                 else:
                     arquivo_mestre = f
@@ -340,7 +340,7 @@ if arquivos_excel and arquivo_csv_3d:
                 
                 if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
                     df_comp = df_sheet
-                elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str):
+                elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str) or ("ABRAÇADEIRA" in sheet_str and "TERMINAL" in sheet_str):
                     df_paraf = df_sheet
                 else:
                     cat_atual = "ITENS GERAIS"
@@ -439,9 +439,16 @@ if arquivos_excel and arquivo_csv_3d:
             is_tubo = "TUBOS KID PLAY" in categoria_peca or (not is_conexao_nativa and "T" in nome_original[:2])
             if is_tubo:
                 categoria_peca = "TUBOS KID PLAY"
-                max_dim = max(w, l, h)
-                metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (max_dim / 100.0)
-                nome_amigavel = "TUBO DE KID PLAY" 
+                
+                # Para evitar os 10cm do bloco de encaixe no 3D, tentamos extrair a medida nominal cravada no NOME do arquivo
+                medida_exata = max(w, l, h) # Backup
+                match_t = re.search(r'\bT\s*0*(\d{2,3})\b', nome_original)
+                if match_t:
+                    medida_exata = float(match_t.group(1))
+                    
+                dims = [0, 0, medida_exata] # Força a medida nominal exata para aparecer correta na tela
+                metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (medida_exata / 100.0)
+                nome_amigavel = "Tubo de Kid Play" 
                 
             if "EVA" in nome_amigavel.upper():
                 area_eva_por_cor[cor_limpa] = area_eva_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
@@ -451,7 +458,7 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                # O motor agora apenas coleta a cor. A matemática de área do bloco foi DESTRUÍDA aqui.
+                # Apenas armazena as cores. A área será derivada 100% dos pisos de EVA.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -660,25 +667,17 @@ if arquivos_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         # ---------------------------------------------------------
-        # O CÁLCULO EXATO DAS BOLINHAS (BASEADO NA SOMA DE TODAS AS PLACAS DE EVA)
-        # --- BLINDADO: NUNCA MAIS ALTERAR ESTA REGRA! ---
+        # O CÁLCULO EXATO DAS BOLINHAS (SOMA TOTAL DO PISO DE EVA M²)
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
-            # 1. Pega a Área Total do EVA gerado no projeto
             area_base_bolinhas = sum(area_eva_por_cor.values())
-                
-            # 2. Divide pela Chapa Nogueira e Multiplica por 1.5
-            area_placa_eva = 4.2025
-            qtd_placas_ref = math.ceil(area_base_bolinhas / area_placa_eva)
-            if qtd_placas_ref == 0: qtd_placas_ref = 1
-            area_matematica_bolinhas = qtd_placas_ref * area_placa_eva
             
-            total_pacotes = int(math.floor((area_matematica_bolinhas * 1.5) + 0.5))
-            
+            # Regra Matemática Absoluta e Cravada: Área do EVA * 1.50
+            total_pacotes = int(math.ceil(area_base_bolinhas * 1.5))
             if total_pacotes == 0: total_pacotes = 1
+            
             qtd_cores = len(cores_bolinhas)
             cores_lista = list(cores_bolinhas)
-            
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
@@ -729,7 +728,6 @@ if arquivos_excel and arquivo_csv_3d:
                     unidade = mat['unidade']
                     
                     cor_final = ""
-                    # Regra de Ouro: Lonas e Cintos herdam a cor nativa da peça no projeto 3D
                     if "LONA" in nome_mat or "CINTO" in nome_mat:
                         if cor_peca and cor_peca.upper() not in ["SEM COR", "MATERIAL"]:
                             cor_final = cor_peca
@@ -831,8 +829,7 @@ if arquivos_excel and arquivo_csv_3d:
                                 total_paraf = int(math.ceil(v_num * qtd_no_projeto))
                                 nome_p = str(col_p).strip()
                                 
-                                # Intercepta Fitilhos da planilha e joga na matemática de pacotes
-                                if "FITILHO" in normalizar_nome_cruzamento(nome_p):
+                                if "FITILHO" in normalizar_nome_cruzamento(nome_p) or "ABRAÇADEIRA" in normalizar_nome_cruzamento(nome_p):
                                     fitilhos_planilha_unidades += total_paraf
                                 else:
                                     chv = (nome_p, "", "")
@@ -859,12 +856,12 @@ if arquivos_excel and arquivo_csv_3d:
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
                 
         if fitilhos_brancos_tubos > 0: 
-            relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Branco")] = fitilhos_brancos_tubos
-            add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Branco", fitilhos_brancos_tubos)
+            relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "", "Branca")] = fitilhos_brancos_tubos
+            add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "", "Branca", fitilhos_brancos_tubos)
             
         if fitilhos_pretos_tubos > 0: 
-            relatorio["PARAFUSOS"]['agregados'][("Pacote(s) de Fitilho", "", "Preto")] = fitilhos_pretos_tubos
-            add_compra("ESTOQUE", "Pacote(s) de Fitilho", "", "Preto", fitilhos_pretos_tubos)
+            relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "", "Preta")] = fitilhos_pretos_tubos
+            add_compra("ESTOQUE", "Abraçadeira 340x4,8Mm", "", "Preta", fitilhos_pretos_tubos)
 
         for cat, itens in consolidador_compras.items():
             chaves_para_remover = []
