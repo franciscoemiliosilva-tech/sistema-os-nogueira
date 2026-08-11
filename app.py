@@ -659,12 +659,11 @@ if arquivos_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         # ---------------------------------------------------------
-        # CÁLCULO DAS BOLINHAS (Total de EVA m² * 1.50) COM ARREDONDAMENTO CIENTÍFICO
+        # CÁLCULO DAS BOLINHAS (Total de EVA m² * 1.50)
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
             area_base_bolinhas = sum(area_eva_por_cor.values())
             calc_bolinhas = area_base_bolinhas * 1.5
-            
             frac = calc_bolinhas - int(calc_bolinhas)
             if frac >= 0.50:
                 total_pacotes = int(calc_bolinhas) + 1
@@ -686,7 +685,6 @@ if arquivos_excel and arquivo_csv_3d:
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
                         add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
-        # ---------------------------------------------------------
 
         for cor, metros in metragem_tubos_por_cor.items():
             pacotes_iso = math.ceil((metros * 1.25) / 64.0)
@@ -727,13 +725,16 @@ if arquivos_excel and arquivo_csv_3d:
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
                     
-                    # Intercepta as Abraçadeiras da composição e joga na contagem de unidades para conversão de pacotes globais
+                    # Intercepta as Abraçadeiras da composição
                     if "ABRAÇADEIRA" in nome_mat:
                         if tem_rede_preta: abracadeira_composicao_unidades_preta += qtd_mat
                         elif cor_peca and cor_peca.upper() in ["PRETO", "MARROM"]: abracadeira_composicao_unidades_preta += qtd_mat
                         else: abracadeira_composicao_unidades_branca += qtd_mat
-                    elif "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P."):
+                    
+                    # --- CORREÇÃO DA DUPLICIDADE: INTERCEPTA O "PF." ABREVIADO PARA A CATEGORIA CERTA ---
+                    elif "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P.") or "PF." in nome_mat or "PF " in nome_mat:
                         add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, cor_final, qtd_mat, True)
+                    
                     elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
                         add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, "", qtd_mat, True)
                     elif "COMPENSADO" in nome_mat or "MDF" in nome_mat or "EUCATEX" in nome_mat:
@@ -849,7 +850,7 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Cordão", "", "", total_fardos_rede)
 
         # ---------------------------------------------------------
-        # SOMA E CONVERSÃO DE ABRAÇADEIRAS (ISOLANDO MONTAGEM x COMPRAS GLOBAIS)
+        # SOMA E CONVERSÃO DE ABRAÇADEIRAS (ISOLANDO MONTAGEM x COMPRAS)
         # ---------------------------------------------------------
         # 1. Converte as unidades da aba de Parafusos/Montagem para pacotes
         pacotes_montagem_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
@@ -859,7 +860,6 @@ if arquivos_excel and arquivo_csv_3d:
         pacotes_fabrica_comp_preta = int(math.ceil(abracadeira_composicao_unidades_preta / 100.0))
         
         # 3. Variáveis exclusivas para a aba visual de PARAFUSOS (Montagem)
-        # Só recebe os pacotes dos tubos/redes + os pacotes lidos na planilha de parafusos
         parafusos_os_branca = fitilhos_brancos_tubos
         parafusos_os_preta = fitilhos_pretos_tubos
         
@@ -868,20 +868,17 @@ if arquivos_excel and arquivo_csv_3d:
             else: parafusos_os_branca += pacotes_montagem_planilha
             
         # 4. Variáveis globais exclusivas para a LISTA DE COMPRAS
-        # Soma a Montagem + A Fábrica
         compras_global_branca = parafusos_os_branca + pacotes_fabrica_comp_branca
         compras_global_preta = parafusos_os_preta + pacotes_fabrica_comp_preta
                 
-        # Nomenclatura blindada - Roteada ISOLADAMENTE
-        
-        # a) ABA PARAFUSOS (Só itens de Montagem: Tubos/Redes + Planilha Parafusos) - Mostrará os 13
+        # a) ABA PARAFUSOS (Só itens de Montagem: Tubos/Redes + Planilha Parafusos)
         if parafusos_os_branca > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca")] = parafusos_os_branca
             
         if parafusos_os_preta > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta")] = parafusos_os_preta
 
-        # b) LISTA DE COMPRAS (Montagem + Fábrica consolidado) - Mostrará os 14
+        # b) LISTA DE COMPRAS (Montagem + Fábrica consolidado)
         if compras_global_branca > 0:
             add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", compras_global_branca, True)
             
@@ -891,7 +888,7 @@ if arquivos_excel and arquivo_csv_3d:
         for cat, itens in consolidador_compras.items():
             chaves_para_remover = []
             
-            # Remove duplicatas exatas na lista de compras final
+            # Remove duplicatas exatas na lista de compras final garantindo a soma
             for k in list(itens.keys()):
                 nome_limpo = re.sub(r'\s+', ' ', k[0].strip().title())
                 unidade_limpa = k[1].strip().title() if k[1] else ""
