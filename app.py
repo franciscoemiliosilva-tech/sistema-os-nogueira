@@ -142,7 +142,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     
     if is_categorized and 'agregados_por_categoria' in dados:
         if is_checklist:
-            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
+            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES"]
         else:
             ordem_cats = ["CONEXÕES DE ALUMÍNIO", "ESTOQUE", "PARAFUSOS E FERRAGENS", "MATÉRIAS PRIMAS", "TUBOS KID PLAY", "MARCENARIA", "ROTTO BRASIL", "FIBRA DE VIDRO", "ESPUMAS ESPECIAIS", "ILUMINAÇÃO"]
             
@@ -776,14 +776,15 @@ if arquivos_excel and arquivo_csv_3d:
         if qtd_pisos_total > 0: add_check("PISOS E CONTENÇÕES", "Pisos (Soma Total)", "", "", qtd_pisos_total)
         if qtd_cont_total > 0: add_check("PISOS E CONTENÇÕES", "Contenções (Soma Total)", "", "", qtd_cont_total)
         
-        add_check("ITENS DE MONTAGEM", "Caixa de Parafusos", "", "", 1)
+        # TODOS OS ITENS EXTRAS AGORA VÃO PARA "ESTOQUE" NO CHECK LIST
+        add_check("ESTOQUE", "Caixa de Parafusos", "", "", 1)
         if (qtd_curva_360 - 1) > 0:
-            add_check("ITENS DE MONTAGEM", "Cinta de Proteção de Curva", "", "", qtd_curva_360 - 1)
-            add_check("ITENS DE MONTAGEM", "Holofote para Curva", "", "", qtd_curva_360 - 1)
+            add_check("ESTOQUE", "Cinta de Proteção de Curva", "", "", qtd_curva_360 - 1)
+            add_check("ESTOQUE", "Holofote para Curva", "", "", qtd_curva_360 - 1)
 
-        # --- NOVO: INJETANDO AS MOLAS NO CHECKLIST ---
+        # INJETANDO AS MOLAS DIRETAMENTE NA ABA ESTOQUE DO CHECKLIST
         for (nome_mola, uni_mola), qtd_mola in molas_para_checklist.items():
-            add_check("ITENS DE MONTAGEM", nome_mola, uni_mola, "", qtd_mola)
+            add_check("ESTOQUE", nome_mola, uni_mola, "", qtd_mola)
             
         relatorio["CHECK LIST DE EXPEDIÇÃO"] = {'agregados_por_categoria': checklist_cat, 'agregados': {}}
         for c_dict in checklist_cat.values():
