@@ -606,6 +606,8 @@ if arquivos_excel and arquivo_csv_3d:
         fitilhos_planilha_unidades = 0
         abracadeira_composicao_unidades_branca = 0
         abracadeira_composicao_unidades_preta = 0
+        
+        molas_para_checklist = {}
 
         espumas_calc = {
             "ESPUMA CILINDRICA 20X20X60CM": 0,
@@ -659,7 +661,7 @@ if arquivos_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         # ---------------------------------------------------------
-        # CÁLCULO DAS BOLINHAS (Total de EVA m² * 1.50)
+        # CÁLCULO DAS BOLINHAS
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
             area_base_bolinhas = sum(area_eva_por_cor.values())
@@ -725,16 +727,18 @@ if arquivos_excel and arquivo_csv_3d:
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
                     
-                    # Intercepta as Abraçadeiras da composição
+                    if "MOLA" in nome_mat:
+                        chave_mola = (nome_final_mat, unidade)
+                        molas_para_checklist[chave_mola] = molas_para_checklist.get(chave_mola, 0) + qtd_mat
+                    
                     if "ABRAÇADEIRA" in nome_mat:
                         if tem_rede_preta: abracadeira_composicao_unidades_preta += qtd_mat
                         elif cor_peca and cor_peca.upper() in ["PRETO", "MARROM"]: abracadeira_composicao_unidades_preta += qtd_mat
                         else: abracadeira_composicao_unidades_branca += qtd_mat
-                    
-                    # --- CORREÇÃO DA DUPLICIDADE: INTERCEPTA O "PF." ABREVIADO PARA A CATEGORIA CERTA ---
+                        
                     elif "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P.") or "PF." in nome_mat or "PF " in nome_mat:
                         add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, cor_final, qtd_mat, True)
-                    
+                        
                     elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
                         add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, "", qtd_mat, True)
                     elif "COMPENSADO" in nome_mat or "MDF" in nome_mat or "EUCATEX" in nome_mat:
@@ -776,6 +780,10 @@ if arquivos_excel and arquivo_csv_3d:
         if (qtd_curva_360 - 1) > 0:
             add_check("ITENS DE MONTAGEM", "Cinta de Proteção de Curva", "", "", qtd_curva_360 - 1)
             add_check("ITENS DE MONTAGEM", "Holofote para Curva", "", "", qtd_curva_360 - 1)
+
+        # --- NOVO: INJETANDO AS MOLAS NO CHECKLIST ---
+        for (nome_mola, uni_mola), qtd_mola in molas_para_checklist.items():
+            add_check("ITENS DE MONTAGEM", nome_mola, uni_mola, "", qtd_mola)
             
         relatorio["CHECK LIST DE EXPEDIÇÃO"] = {'agregados_por_categoria': checklist_cat, 'agregados': {}}
         for c_dict in checklist_cat.values():
@@ -827,7 +835,6 @@ if arquivos_excel and arquivo_csv_3d:
                                 total_paraf = int(math.ceil(v_num * qtd_no_projeto))
                                 nome_p = str(col_p).strip()
                                 
-                                # Intercepta as abraçadeiras da planilha de montagem e manda para a conversão de pacotes
                                 if "FITILHO" in normalizar_nome_cruzamento(nome_p) or "ABRAÇADEIRA" in normalizar_nome_cruzamento(nome_p):
                                     fitilhos_planilha_unidades += total_paraf
                                 else:
@@ -852,14 +859,10 @@ if arquivos_excel and arquivo_csv_3d:
         # ---------------------------------------------------------
         # SOMA E CONVERSÃO DE ABRAÇADEIRAS (ISOLANDO MONTAGEM x COMPRAS)
         # ---------------------------------------------------------
-        # 1. Converte as unidades da aba de Parafusos/Montagem para pacotes
         pacotes_montagem_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
-        
-        # 2. Converte as unidades da aba de Composição/Fábrica para pacotes
         pacotes_fabrica_comp_branca = int(math.ceil(abracadeira_composicao_unidades_branca / 100.0))
         pacotes_fabrica_comp_preta = int(math.ceil(abracadeira_composicao_unidades_preta / 100.0))
         
-        # 3. Variáveis exclusivas para a aba visual de PARAFUSOS (Montagem)
         parafusos_os_branca = fitilhos_brancos_tubos
         parafusos_os_preta = fitilhos_pretos_tubos
         
@@ -867,28 +870,22 @@ if arquivos_excel and arquivo_csv_3d:
             if tem_rede_preta: parafusos_os_preta += pacotes_montagem_planilha
             else: parafusos_os_branca += pacotes_montagem_planilha
             
-        # 4. Variáveis globais exclusivas para a LISTA DE COMPRAS
         compras_global_branca = parafusos_os_branca + pacotes_fabrica_comp_branca
         compras_global_preta = parafusos_os_preta + pacotes_fabrica_comp_preta
                 
-        # a) ABA PARAFUSOS (Só itens de Montagem: Tubos/Redes + Planilha Parafusos)
         if parafusos_os_branca > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca")] = parafusos_os_branca
-            
         if parafusos_os_preta > 0: 
             relatorio["PARAFUSOS"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta")] = parafusos_os_preta
 
-        # b) LISTA DE COMPRAS (Montagem + Fábrica consolidado)
         if compras_global_branca > 0:
             add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", compras_global_branca, True)
-            
         if compras_global_preta > 0:
             add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta", compras_global_preta, True)
 
         for cat, itens in consolidador_compras.items():
             chaves_para_remover = []
             
-            # Remove duplicatas exatas na lista de compras final garantindo a soma
             for k in list(itens.keys()):
                 nome_limpo = re.sub(r'\s+', ' ', k[0].strip().title())
                 unidade_limpa = k[1].strip().title() if k[1] else ""
