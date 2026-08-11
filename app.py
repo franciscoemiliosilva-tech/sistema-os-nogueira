@@ -142,7 +142,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     
     if is_categorized and 'agregados_por_categoria' in dados:
         if is_checklist:
-            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES"]
+            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
         else:
             ordem_cats = ["CONEXÕES DE ALUMÍNIO", "ESTOQUE", "PARAFUSOS E FERRAGENS", "MATÉRIAS PRIMAS", "TUBOS KID PLAY", "MARCENARIA", "ROTTO BRASIL", "FIBRA DE VIDRO", "ESPUMAS ESPECIAIS", "ILUMINAÇÃO"]
             
@@ -461,10 +461,14 @@ if arquivos_excel and arquivo_csv_3d:
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
+            # Cama elástica e afins puxando a medida
+            is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
+
             items_parsed.append({
                 'cat': categoria_peca, 'nome': nome_amigavel, 'cor': cor_limpa,
                 'is_piso_contencao': categoria_peca == "PISOS E CONTENÇÕES",
                 'is_contencao': "CONTEN" in nome_amigavel_upper,
+                'is_cama_elastica': is_cama_elastica,
                 'is_impresso': is_impresso,
                 'z_round': round(pz/40.0)*40.0, 'y_round': round(py/40.0)*40.0, 'x': px, 'dims': dims
             })
@@ -477,6 +481,10 @@ if arquivos_excel and arquivo_csv_3d:
         qtd_turbilhao = 0
         qtd_ponte_105 = 0; qtd_ponte_210 = 0
         qtd_ferro_triangulo = 0; qtd_ferro_fora_padrao = 0
+        
+        qtd_escorregador_2v = 0
+        qtd_escorregador_3v = 0
+        qtd_escorregador_4v = 0
         
         for item in items_parsed:
             cat = item['cat']
@@ -491,14 +499,21 @@ if arquivos_excel and arquivo_csv_3d:
             if "PONTE" in nome_upper and "210" in nome_upper and "30" in nome_upper and not is_nome_piso: qtd_ponte_210 += 1
                 
             if item['is_piso_contencao']:
-                if "TRIANG" in nome_upper: qtd_ferro_triangulo += 1
+                if "TRIANG" in nome_upper or "TRIÂNG" in nome_upper: qtd_ferro_triangulo += 1
                 if "FORA DE PADR" in nome_upper and item['dims'][2] > 109: qtd_ferro_fora_padrao += 1
+
+            if "ESCORREGADOR" in nome_upper:
+                if "2 VIA" in nome_upper: qtd_escorregador_2v += 1
+                elif "3 VIA" in nome_upper: qtd_escorregador_3v += 1
+                elif "4 VIA" in nome_upper: qtd_escorregador_4v += 1
 
             medida = ""
             if cat == "TUBOS KID PLAY":
                 medida = str(int(max(item['dims']))) 
             elif any(x in nome_upper for x in ["CONTEN", "PORT", "FORA DE PADR", "BANNER", "ADESIV", "IMPRESS", "LONA"]):
                 if item['dims'][1] > 0 and cat != "COSTURA": medida = f"{item['dims'][2]}x{item['dims'][1]}" 
+            elif item.get('is_cama_elastica') and item['dims'][1] > 0:
+                medida = f"{item['dims'][2]}x{item['dims'][1]}"
 
             cor_display = "" if cat in ["TUBOS KID PLAY", "SERRALHERIA", "CONEXÕES DE ALUMÍNIO"] else item['cor']
 
@@ -535,6 +550,25 @@ if arquivos_excel and arquivo_csv_3d:
                 chave_imp = (item['nome'], medida, cor_display)
                 if chave_imp not in relatorio["IMPRESSÃO"]['agregados']: relatorio["IMPRESSÃO"]['agregados'][chave_imp] = 0
                 relatorio["IMPRESSÃO"]['agregados'][chave_imp] += 1
+
+        # --- REGRAS DE INJEÇÃO (MADEIRA DE APOIO ESCORREGADOR) ---
+        if qtd_escorregador_2v > 0:
+            if "ATIVIDADES KID PLAY" not in relatorio: relatorio["ATIVIDADES KID PLAY"] = {'agregados': {}}
+            relatorio["ATIVIDADES KID PLAY"]['agregados'][("Madeira de Apoio para Escorregador", "100x08", "")] = relatorio["ATIVIDADES KID PLAY"]['agregados'].get(("Madeira de Apoio para Escorregador", "100x08", ""), 0) + qtd_escorregador_2v
+            if "MARCENARIA" not in relatorio: relatorio["MARCENARIA"] = {'agregados': {}}
+            relatorio["MARCENARIA"]['agregados'][("Madeira de Apoio para Escorregador", "100x08", "")] = relatorio["MARCENARIA"]['agregados'].get(("Madeira de Apoio para Escorregador", "100x08", ""), 0) + qtd_escorregador_2v
+
+        if qtd_escorregador_3v > 0:
+            if "ATIVIDADES KID PLAY" not in relatorio: relatorio["ATIVIDADES KID PLAY"] = {'agregados': {}}
+            relatorio["ATIVIDADES KID PLAY"]['agregados'][("Madeira de Apoio para Escorregador", "150x08", "")] = relatorio["ATIVIDADES KID PLAY"]['agregados'].get(("Madeira de Apoio para Escorregador", "150x08", ""), 0) + qtd_escorregador_3v
+            if "MARCENARIA" not in relatorio: relatorio["MARCENARIA"] = {'agregados': {}}
+            relatorio["MARCENARIA"]['agregados'][("Madeira de Apoio para Escorregador", "150x08", "")] = relatorio["MARCENARIA"]['agregados'].get(("Madeira de Apoio para Escorregador", "150x08", ""), 0) + qtd_escorregador_3v
+
+        if qtd_escorregador_4v > 0:
+            if "ATIVIDADES KID PLAY" not in relatorio: relatorio["ATIVIDADES KID PLAY"] = {'agregados': {}}
+            relatorio["ATIVIDADES KID PLAY"]['agregados'][("Madeira de Apoio para Escorregador", "205x08", "")] = relatorio["ATIVIDADES KID PLAY"]['agregados'].get(("Madeira de Apoio para Escorregador", "205x08", ""), 0) + qtd_escorregador_4v
+            if "MARCENARIA" not in relatorio: relatorio["MARCENARIA"] = {'agregados': {}}
+            relatorio["MARCENARIA"]['agregados'][("Madeira de Apoio para Escorregador", "205x08", "")] = relatorio["MARCENARIA"]['agregados'].get(("Madeira de Apoio para Escorregador", "205x08", ""), 0) + qtd_escorregador_4v
 
         qtd_curva_360 = 0
         if "ROTTO BRASIL" in relatorio and 'agregados' in relatorio["ROTTO BRASIL"]:
@@ -770,10 +804,13 @@ if arquivos_excel and arquivo_csv_3d:
                         
                     add_check(cat_c, nome_chk, chv[1], chv[2], q)
                     
-        qtd_pisos_total = sum(1 for i in items_parsed if i['is_piso_contencao'] and not i['is_contencao'])
+        # --- SEPARAÇÃO DOS PISOS E CONTENÇÕES ---
+        qtd_pisos_total = sum(1 for i in items_parsed if i['is_piso_contencao'] and not i['is_contencao'] and "TRIANG" not in i['nome'].upper() and "TRIÂNG" not in i['nome'].upper())
+        qtd_pisos_triangulo = sum(1 for i in items_parsed if i['is_piso_contencao'] and not i['is_contencao'] and ("TRIANG" in i['nome'].upper() or "TRIÂNG" in i['nome'].upper()))
         qtd_cont_total = sum(1 for i in items_parsed if i['is_piso_contencao'] and i['is_contencao'])
                 
         if qtd_pisos_total > 0: add_check("PISOS E CONTENÇÕES", "Pisos (Soma Total)", "", "", qtd_pisos_total)
+        if qtd_pisos_triangulo > 0: add_check("PISOS E CONTENÇÕES", "Pisos Triângulo (Soma Total)", "", "", qtd_pisos_triangulo)
         if qtd_cont_total > 0: add_check("PISOS E CONTENÇÕES", "Contenções (Soma Total)", "", "", qtd_cont_total)
         
         # TODOS OS ITENS EXTRAS AGORA VÃO PARA "ESTOQUE" NO CHECK LIST
@@ -858,7 +895,7 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Cordão", "", "", total_fardos_rede)
 
         # ---------------------------------------------------------
-        # SOMA E CONVERSÃO DE ABRAÇADEIRAS (ISOLANDO MONTAGEM x COMPRAS)
+        # SOMA E CONVERSÃO DE ABRAÇADEIRAS
         # ---------------------------------------------------------
         pacotes_montagem_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
         pacotes_fabrica_comp_branca = int(math.ceil(abracadeira_composicao_unidades_branca / 100.0))
