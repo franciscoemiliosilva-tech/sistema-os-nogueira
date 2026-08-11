@@ -142,7 +142,7 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     
     if is_categorized and 'agregados_por_categoria' in dados:
         if is_checklist:
-            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES", "ITENS DE MONTAGEM"]
+            ordem_cats = ["ATIVIDADES KID PLAY", "ROTTO BRASIL", "FIBRA DE VIDRO", "SERRALHERIA", "MARCENARIA", "COSTURA", "IMPRESSÃO", "ESTOQUE", "PISOS E CONTENÇÕES"]
         else:
             ordem_cats = ["CONEXÕES DE ALUMÍNIO", "ESTOQUE", "PARAFUSOS E FERRAGENS", "MATÉRIAS PRIMAS", "TUBOS KID PLAY", "MARCENARIA", "ROTTO BRASIL", "FIBRA DE VIDRO", "ESPUMAS ESPECIAIS", "ILUMINAÇÃO"]
             
@@ -461,7 +461,7 @@ if arquivos_excel and arquivo_csv_3d:
             if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
                 area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
 
-            # Cama elástica e afins puxando a medida
+            # Cama elástica e afins puxando a medida do 3D
             is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
 
             items_parsed.append({
@@ -805,12 +805,27 @@ if arquivos_excel and arquivo_csv_3d:
                     add_check(cat_c, nome_chk, chv[1], chv[2], q)
                     
         # --- SEPARAÇÃO DOS PISOS E CONTENÇÕES ---
-        qtd_pisos_total = sum(1 for i in items_parsed if i['is_piso_contencao'] and not i['is_contencao'] and "TRIANG" not in i['nome'].upper() and "TRIÂNG" not in i['nome'].upper())
-        qtd_pisos_triangulo = sum(1 for i in items_parsed if i['is_piso_contencao'] and not i['is_contencao'] and ("TRIANG" in i['nome'].upper() or "TRIÂNG" in i['nome'].upper()))
-        qtd_cont_total = sum(1 for i in items_parsed if i['is_piso_contencao'] and i['is_contencao'])
+        qtd_pisos_comuns = 0
+        qtd_pisos_triangulo = 0
+        qtd_pisos_l = 0
+        qtd_cont_total = 0
+
+        for i in items_parsed:
+            if i['is_piso_contencao']:
+                if i['is_contencao']:
+                    qtd_cont_total += 1
+                else:
+                    nome_u = i['nome'].upper()
+                    if "TRIANG" in nome_u or "TRIÂNG" in nome_u:
+                        qtd_pisos_triangulo += 1
+                    elif re.search(r'\bL\b', nome_u) or "PISO L" in nome_u:
+                        qtd_pisos_l += 1
+                    else:
+                        qtd_pisos_comuns += 1
                 
-        if qtd_pisos_total > 0: add_check("PISOS E CONTENÇÕES", "Pisos (Soma Total)", "", "", qtd_pisos_total)
+        if qtd_pisos_comuns > 0: add_check("PISOS E CONTENÇÕES", "Pisos (Soma Total)", "", "", qtd_pisos_comuns)
         if qtd_pisos_triangulo > 0: add_check("PISOS E CONTENÇÕES", "Pisos Triângulo (Soma Total)", "", "", qtd_pisos_triangulo)
+        if qtd_pisos_l > 0: add_check("PISOS E CONTENÇÕES", "Pisos L (Soma Total)", "", "", qtd_pisos_l)
         if qtd_cont_total > 0: add_check("PISOS E CONTENÇÕES", "Contenções (Soma Total)", "", "", qtd_cont_total)
         
         # TODOS OS ITENS EXTRAS AGORA VÃO PARA "ESTOQUE" NO CHECK LIST
@@ -823,6 +838,14 @@ if arquivos_excel and arquivo_csv_3d:
         for (nome_mola, uni_mola), qtd_mola in molas_para_checklist.items():
             add_check("ESTOQUE", nome_mola, uni_mola, "", qtd_mola)
             
+        # INJETANDO MADEIRA DE APOIO NO CHECK LIST (DENTRO DE ATIVIDADES KID PLAY)
+        if qtd_escorregador_2v > 0:
+            add_check("ATIVIDADES KID PLAY", "Madeira de Apoio para Escorregador", "100x08", "", qtd_escorregador_2v)
+        if qtd_escorregador_3v > 0:
+            add_check("ATIVIDADES KID PLAY", "Madeira de Apoio para Escorregador", "150x08", "", qtd_escorregador_3v)
+        if qtd_escorregador_4v > 0:
+            add_check("ATIVIDADES KID PLAY", "Madeira de Apoio para Escorregador", "205x08", "", qtd_escorregador_4v)
+
         relatorio["CHECK LIST DE EXPEDIÇÃO"] = {'agregados_por_categoria': checklist_cat, 'agregados': {}}
         for c_dict in checklist_cat.values():
             for k, v in c_dict.items():
@@ -895,7 +918,7 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("ESTOQUE", "Cordão", "", "", total_fardos_rede)
 
         # ---------------------------------------------------------
-        # SOMA E CONVERSÃO DE ABRAÇADEIRAS
+        # SOMA E CONVERSÃO DE ABRAÇADEIRAS (ISOLANDO MONTAGEM x COMPRAS)
         # ---------------------------------------------------------
         pacotes_montagem_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
         pacotes_fabrica_comp_branca = int(math.ceil(abracadeira_composicao_unidades_branca / 100.0))
