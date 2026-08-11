@@ -399,7 +399,12 @@ if arquivos_excel and arquivo_csv_3d:
         lista_auditoria = [] 
         area_marcenaria_m2 = 0.0
         
+        # Variáveis exclusivas para Manta e Lona matemática
+        area_total_espuma_m2 = 0.0
+        lona_calculada_por_cor = {}
+        
         contagem_codigos_oficiais = {}
+        codigos_pisos = set()
         
         for _, row in df_3d.iterrows():
             nome_original = str(row.get('Name', '')).strip().upper()
@@ -425,6 +430,9 @@ if arquivos_excel and arquivo_csv_3d:
                     categoria_peca = banco_dados[codigo_base]['cat']
                     chave_cod = (codigo_base, cor_limpa)
                     contagem_codigos_oficiais[chave_cod] = contagem_codigos_oficiais.get(chave_cod, 0) + 1
+                    
+                    if categoria_peca == "PISOS E CONTENÇÕES":
+                        codigos_pisos.add(codigo_base)
 
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
@@ -458,8 +466,28 @@ if arquivos_excel and arquivo_csv_3d:
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
-            if categoria_peca == "PISOS E CONTENÇÕES" or "CONTEN" in nome_amigavel_upper:
-                area_marcenaria_m2 += (dims[1] * dims[2]) / 10000.0
+            is_contencao_flag = "CONTEN" in nome_amigavel_upper
+
+            if categoria_peca == "PISOS E CONTENÇÕES" or is_contencao_flag:
+                # 1. Área para Marcenaria e para Manta de Espuma
+                area = (dims[1] * dims[2]) / 10000.0
+                area_marcenaria_m2 += area
+                area_total_espuma_m2 += area
+                
+                # 2. Metragem Lona (Linear Baseada na Regra do 3D)
+                is_triangulo = "TRIANG" in nome_amigavel_upper or "TRIÂNG" in nome_amigavel_upper
+                
+                if is_triangulo:
+                    metros_lona = 1.29
+                elif is_contencao_flag:
+                    metros_lona = (dims[2] + 20.0) / 100.0
+                else:
+                    # Pisos normais ou Pisos em L
+                    metros_lona = ((dims[1] + 20.0) * 2.0) / 100.0
+                    
+                if cor_limpa.title() not in lona_calculada_por_cor:
+                    lona_calculada_por_cor[cor_limpa.title()] = 0.0
+                lona_calculada_por_cor[cor_limpa.title()] += metros_lona
 
             # Cama elástica e afins puxando a medida do 3D
             is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
@@ -467,7 +495,7 @@ if arquivos_excel and arquivo_csv_3d:
             items_parsed.append({
                 'cat': categoria_peca, 'nome': nome_amigavel, 'cor': cor_limpa,
                 'is_piso_contencao': categoria_peca == "PISOS E CONTENÇÕES",
-                'is_contencao': "CONTEN" in nome_amigavel_upper,
+                'is_contencao': is_contencao_flag,
                 'is_cama_elastica': is_cama_elastica,
                 'is_impresso': is_impresso,
                 'z_round': round(pz/40.0)*40.0, 'y_round': round(py/40.0)*40.0, 'x': px, 'dims': dims
@@ -744,6 +772,16 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("MARCENARIA", "Chapa de Compensado 18mm", "2,20x1,10m", "", chapas_compensado)
 
         # ---------------------------------------------------------
+        # INJEÇÃO MATEMÁTICA DE LONA E MANTA DE ESPUMA PARA PISOS
+        # ---------------------------------------------------------
+        if area_total_espuma_m2 > 0:
+            qtd_espuma = math.ceil(area_total_espuma_m2 / 9.5)
+            add_compra("MATÉRIAS PRIMAS", "Manta De Espuma 7144 - 1,9Lx5Mx20Mm", "Chapa", "", qtd_espuma)
+
+        for cor_lona, metros_lona in lona_calculada_por_cor.items():
+            add_compra("MATÉRIAS PRIMAS", "Lona", "M", cor_lona, metros_lona, is_float=True)
+
+        # ---------------------------------------------------------
         # MOTOR DE COMPOSIÇÃO - EXPLOSÃO E CONSOLIDAÇÃO
         # ---------------------------------------------------------
         for (cod_peca, cor_peca), qtd_peca in contagem_codigos_oficiais.items():
@@ -760,6 +798,11 @@ if arquivos_excel and arquivo_csv_3d:
                             cor_final = cor_peca.title()
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
+
+                    # Trava para não duplicar Lona e Espuma que já foram calculadas matematicamente pelo 3D
+                    if cod_peca in codigos_pisos:
+                        if "LONA" in nome_mat or "MANTA" in nome_mat or "7144" in nome_mat:
+                            continue
                     
                     if "MOLA" in nome_mat:
                         chave_mola = (nome_final_mat, unidade)
@@ -828,17 +871,14 @@ if arquivos_excel and arquivo_csv_3d:
         if qtd_pisos_l > 0: add_check("PISOS E CONTENÇÕES", "Pisos L (Soma Total)", "", "", qtd_pisos_l)
         if qtd_cont_total > 0: add_check("PISOS E CONTENÇÕES", "Contenções (Soma Total)", "", "", qtd_cont_total)
         
-        # TODOS OS ITENS EXTRAS AGORA VÃO PARA "ESTOQUE" NO CHECK LIST
         add_check("ESTOQUE", "Caixa de Parafusos", "", "", 1)
         if (qtd_curva_360 - 1) > 0:
             add_check("ESTOQUE", "Cinta de Proteção de Curva", "", "", qtd_curva_360 - 1)
             add_check("ESTOQUE", "Holofote para Curva", "", "", qtd_curva_360 - 1)
 
-        # INJETANDO AS MOLAS DIRETAMENTE NA ABA ESTOQUE DO CHECKLIST
         for (nome_mola, uni_mola), qtd_mola in molas_para_checklist.items():
             add_check("ESTOQUE", nome_mola, uni_mola, "", qtd_mola)
             
-        # INJETANDO MADEIRA DE APOIO NO CHECK LIST (DENTRO DE ATIVIDADES KID PLAY)
         if qtd_escorregador_2v > 0:
             add_check("ATIVIDADES KID PLAY", "Madeira de Apoio para Escorregador", "100x08", "", qtd_escorregador_2v)
         if qtd_escorregador_3v > 0:
