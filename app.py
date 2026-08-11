@@ -158,7 +158,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
             
             for chave in sorted(itens_cat.keys(), key=lambda x: x[0]):
                 qtd = itens_cat[chave]
-                
                 if isinstance(qtd, float) and qtd.is_integer():
                     qtd = int(qtd)
                 elif isinstance(qtd, float):
@@ -168,7 +167,6 @@ def gerar_html_os(categoria, dados, cliente, projeto):
                 medida = chave[1] if chave[1] else "-"
                 cor = f" ({chave[2]})" if chave[2] else ""
                 linhas_tabela += f'<tr><td>{nome}{cor}</td><td class="center">{medida}</td><td class="center bold">{qtd}</td>{td_ok}</tr>'
-                
                 try: total_q += float(qtd)
                 except: pass
     else:
@@ -285,20 +283,17 @@ if arquivos_excel and arquivo_csv_3d:
                 df_sheet = pd.read_excel(xls, sheet_name=sheet_name, header=None)
                 sheet_str = df_sheet.astype(str).to_string().upper()
                 s_name = sheet_name.upper()
-                
                 if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
                     arquivo_comp = f
                 elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str) or ("ABRAÇADEIRA" in sheet_str and "TERMINAL" in sheet_str):
                     pass
                 else:
                     arquivo_mestre = f
-            
         if not arquivo_mestre: arquivo_mestre = arquivos_excel[0]
         
         # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
         df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
         
-        # Filtro Anti-Clone
         df_3d['X_round'] = df_3d['PosX'].round(0)
         df_3d['Y_round'] = df_3d['PosY'].round(0)
         df_3d['Z_round'] = df_3d['PosZ'].round(0)
@@ -306,15 +301,12 @@ if arquivos_excel and arquivo_csv_3d:
         qt_original = len(df_3d)
         df_3d = df_3d.drop_duplicates(subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'])
         qt_limpo = len(df_3d)
-        
-        if qt_original != qt_limpo:
-            st.warning(f"🧹 Filtro Ativado: O sistema deletou {qt_original - qt_limpo} peças duplicadas/sobrepostas no 3D.")
+        if qt_original != qt_limpo: st.warning(f"🧹 Filtro Ativado: Deletou {qt_original - qt_limpo} peças duplicadas no 3D.")
         
         cliente_csv, projeto_csv = "", ""
         for col in df_3d.columns:
             if "CLIENTE" in str(col).upper(): val = str(df_3d[col].iloc[0]); cliente_csv = val if val != 'nan' else ""
             if "PV" in str(col).upper() or "PROJETO" in str(col).upper(): val = str(df_3d[col].iloc[0]); projeto_csv = val if val != 'nan' else ""
-                
         if not cliente_csv:
             filename = arquivo_csv_3d.name.replace('.csv', '')
             if " - " in filename: parts = filename.split(" - "); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
@@ -335,7 +327,6 @@ if arquivos_excel and arquivo_csv_3d:
                 df_sheet = pd.read_excel(xls, sheet_name=sheet_name, header=None)
                 sheet_str = df_sheet.astype(str).to_string().upper()
                 s_name = sheet_name.upper()
-                
                 if "COMP" in s_name or "PEÇAS" in s_name or "RECEIT" in s_name or ("COMPENSADO 17MM" in sheet_str and "LONA" in sheet_str):
                     df_comp = df_sheet
                 elif "PARAFUSO" in s_name or ("FITILHO" in sheet_str and "TERMINAL" in sheet_str and "ITENS" in sheet_str) or ("ABRAÇADEIRA" in sheet_str and "TERMINAL" in sheet_str):
@@ -355,13 +346,10 @@ if arquivos_excel and arquivo_csv_3d:
                                     cat_atual = re.sub(r'\s+', ' ', val_str).strip().upper()
 
         banco_dados_seguro = {
-            'CONEXAO_BASE': 'Base', 'CONEXAO_COTOVELO': 'Cotovelo', 
-            'CONEXAO_LUVA': 'Luva', 'CONEXAO_PUNHO': 'Punho',
-            'CONEXAO_T_4_SAIDAS': 'T 4 Saídas', 'CONEXAO_CRUZETA': 'Cruzeta',
-            'CONEXAO_ARTICULADA': 'Articulada'
+            'CONEXAO_BASE': 'Base', 'CONEXAO_COTOVELO': 'Cotovelo', 'CONEXAO_LUVA': 'Luva', 'CONEXAO_PUNHO': 'Punho',
+            'CONEXAO_T_4_SAIDAS': 'T 4 Saídas', 'CONEXAO_CRUZETA': 'Cruzeta', 'CONEXAO_ARTICULADA': 'Articulada'
         }
         
-        # --- EXTRATOR DA COMPOSIÇÃO DE MATERIAIS ---
         dict_composicao = {}
         if df_comp is not None:
             codigo_atual = None
@@ -369,28 +357,17 @@ if arquivos_excel and arquivo_csv_3d:
                 col1 = str(row[1]).strip() if pd.notna(row[1]) else ""
                 col2 = row[2] if pd.notna(row[2]) else None
                 col3 = str(row[3]).strip() if pd.notna(row[3]) else ""
-                
                 if col1 == "" and pd.isna(row[2]):
                     codigo_atual = None
                     continue
-                
                 match_cod = re.search(r'=([A-Z][0-9O]{2})', col1.upper())
                 if match_cod:
                     codigo_atual = match_cod.group(1).replace('O', '0')
                     dict_composicao[codigo_atual] = []
-                    
                 elif codigo_atual is not None and col1 != "":
-                    try:
-                        q_val = float(col2)
-                    except:
-                        q_val = 0.0
-                    
-                    if q_val > 0:
-                        dict_composicao[codigo_atual].append({
-                            "material": col1,
-                            "qtd": q_val,
-                            "unidade": col3
-                        })
+                    try: q_val = float(col2)
+                    except: q_val = 0.0
+                    if q_val > 0: dict_composicao[codigo_atual].append({"material": col1, "qtd": q_val, "unidade": col3})
 
         # (2) PROCESSAMENTO PRINCIPAL DO 3D
         items_parsed = []
@@ -398,7 +375,6 @@ if arquivos_excel and arquivo_csv_3d:
         cores_bolinhas, metragem_tubos_por_cor = set(), {}
         lista_auditoria = [] 
         area_marcenaria_m2 = 0.0
-        
         contagem_codigos_oficiais = {}
         
         for _, row in df_3d.iterrows():
@@ -429,7 +405,6 @@ if arquivos_excel and arquivo_csv_3d:
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
 
-            # --- EXTRAÇÃO DE DIMENSÕES PURA DO 3D ---
             w = parse_dim(row.get('Width', 0)); l = parse_dim(row.get('Length', 0)); h = parse_dim(row.get('Height', 0))
             dims = sorted([int(round(w)), int(round(l)), int(round(h))])
             px = parse_dim(row.get('PosX', 0)); py = parse_dim(row.get('PosY', 0)); pz = parse_dim(row.get('PosZ', 0))
@@ -437,11 +412,8 @@ if arquivos_excel and arquivo_csv_3d:
             is_tubo = "TUBOS KID PLAY" in categoria_peca or (not is_conexao_nativa and "T" in nome_original[:2])
             if is_tubo:
                 categoria_peca = "TUBOS KID PLAY"
-                
-                # Leitura 100% direta e exata da bounding box exportada no CSV (Sem dedução, confiando na correção do 3D)
                 medida_exata = max(w, l, h) 
-                    
-                dims = [0, 0, int(round(medida_exata))] # Grava a dimensão exata forçada
+                dims = [0, 0, int(round(medida_exata))]
                 metragem_tubos_por_cor[cor_limpa] = metragem_tubos_por_cor.get(cor_limpa, 0.0) + (medida_exata / 100.0)
                 nome_amigavel = "Tubo de Kid Play" 
                 
@@ -453,7 +425,6 @@ if arquivos_excel and arquivo_csv_3d:
                 continue
                 
             if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                # Apenas armazena as cores. A área será derivada 100% dos pisos de EVA.
                 cores_bolinhas.add(cor_limpa)
                 continue
                 
@@ -470,6 +441,7 @@ if arquivos_excel and arquivo_csv_3d:
                 'cat': categoria_peca, 'nome': nome_amigavel, 'cor': cor_limpa,
                 'is_piso_contencao': categoria_peca == "PISOS E CONTENÇÕES",
                 'is_contencao': "CONTEN" in nome_amigavel_upper,
+                'is_cama_elastica': any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA"]),
                 'is_impresso': is_impresso,
                 'z_round': round(pz/40.0)*40.0, 'y_round': round(py/40.0)*40.0, 'x': px, 'dims': dims
             })
@@ -504,6 +476,9 @@ if arquivos_excel and arquivo_csv_3d:
                 medida = str(int(max(item['dims']))) 
             elif any(x in nome_upper for x in ["CONTEN", "PORT", "FORA DE PADR", "BANNER", "ADESIV", "IMPRESS", "LONA"]):
                 if item['dims'][1] > 0 and cat != "COSTURA": medida = f"{item['dims'][2]}x{item['dims'][1]}" 
+            # Trava para Camas Elásticas puxarem a medida do 3D
+            elif item.get('is_cama_elastica') and item['dims'][1] > 0:
+                medida = f"{item['dims'][2]}x{item['dims'][1]}"
 
             cor_display = "" if cat in ["TUBOS KID PLAY", "SERRALHERIA", "CONEXÕES DE ALUMÍNIO"] else item['cor']
 
@@ -546,7 +521,6 @@ if arquivos_excel and arquivo_csv_3d:
             for chave, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
                 if "CURVA" in chave[0].upper(): qtd_curva_360 += qtd
 
-        # (5) FIXOS, SERRALHERIA E ESTOQUE
         if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
         if 'agregados' not in relatorio["IMPRESSÃO"]: relatorio["IMPRESSÃO"]['agregados'] = {}
         relatorio["IMPRESSÃO"]['agregados'][("Régua do Kid Play", "", "")] = 1
@@ -580,7 +554,6 @@ if arquivos_excel and arquivo_csv_3d:
         if "ESTOQUE" not in relatorio: relatorio["ESTOQUE"] = {}
         if 'agregados' not in relatorio["ESTOQUE"]: relatorio["ESTOQUE"]['agregados'] = {}
         
-        # SISTEMA DE COMPRAS CATEGORIZADO
         if "LISTA DE COMPRAS" not in relatorio: relatorio["LISTA DE COMPRAS"] = {}
         if 'agregados_por_categoria' not in relatorio["LISTA DE COMPRAS"]: relatorio["LISTA DE COMPRAS"]['agregados_por_categoria'] = {}
         
@@ -657,13 +630,11 @@ if arquivos_excel and arquivo_csv_3d:
             total_fardos_rede += fardos
             
         # ---------------------------------------------------------
-        # CÁLCULO DAS BOLINHAS (Total de EVA m² * 1.50) COM ARREDONDAMENTO CIENTÍFICO
+        # CÁLCULO DAS BOLINHAS (Total de EVA m² * 1.50)
         # ---------------------------------------------------------
         if len(cores_bolinhas) > 0:
             area_base_bolinhas = sum(area_eva_por_cor.values())
             calc_bolinhas = area_base_bolinhas * 1.5
-            
-            # Regra de arredondamento: 7.49 desce para 7 | 7.50 sobe para 8
             frac = calc_bolinhas - int(calc_bolinhas)
             if frac >= 0.50:
                 total_pacotes = int(calc_bolinhas) + 1
@@ -685,7 +656,6 @@ if arquivos_excel and arquivo_csv_3d:
                     if qtd_para_cor > 0: 
                         relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", cor)] = qtd_para_cor
                         add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
-        # ---------------------------------------------------------
 
         tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
         fitilhos_brancos_tubos = 0
@@ -702,7 +672,6 @@ if arquivos_excel and arquivo_csv_3d:
                 elif cor.upper() in ["PRETO", "MARROM"]: fitilhos_pretos_tubos += pacotes_fitilho
                 else: fitilhos_brancos_tubos += pacotes_fitilho
 
-        # TUBOS E MARCENARIA INTELIGENTES
         total_metros_tubo = sum(metragem_tubos_por_cor.values())
         if total_metros_tubo > 0:
             qtd_barras_6m = math.ceil(total_metros_tubo / 6.0)
@@ -713,7 +682,7 @@ if arquivos_excel and arquivo_csv_3d:
             add_compra("MARCENARIA", "Chapa de Compensado 18mm", "2,20x1,10m", "", chapas_compensado)
 
         # ---------------------------------------------------------
-        # MOTOR DE COMPOSIÇÃO - EXPLOSÃO COM HERANÇA DE COR
+        # MOTOR DE COMPOSIÇÃO - EXPLOSÃO E CONSOLIDAÇÃO
         # ---------------------------------------------------------
         for (cod_peca, cor_peca), qtd_peca in contagem_codigos_oficiais.items():
             if cod_peca in dict_composicao:
@@ -730,7 +699,11 @@ if arquivos_excel and arquivo_csv_3d:
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
                     
-                    # ROTEAMENTO PARA AS ABAS CORRETAS NA LISTA DE COMPRAS
+                    # Unifica Abraçadeira
+                    if "ABRAÇADEIRA" in nome_mat:
+                        nome_final_mat = "Abraçadeira 340x4,8Mm"
+                        unidade = "Pacote(s)"
+                        
                     if "ABRAÇADEIRA" in nome_mat or "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P."):
                         add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, cor_final, qtd_mat, True)
                     elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
@@ -826,7 +799,6 @@ if arquivos_excel and arquivo_csv_3d:
                                 total_paraf = int(math.ceil(v_num * qtd_no_projeto))
                                 nome_p = str(col_p).strip()
                                 
-                                # Troca Definitiva: Captura tanto Fitilho quanto Abraçadeira e unifica a soma
                                 if "FITILHO" in normalizar_nome_cruzamento(nome_p) or "ABRAÇADEIRA" in normalizar_nome_cruzamento(nome_p):
                                     fitilhos_planilha_unidades += total_paraf
                                 else:
@@ -853,16 +825,36 @@ if arquivos_excel and arquivo_csv_3d:
             if tem_rede_preta: fitilhos_pretos_tubos += pacotes_extra_planilha
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
                 
-        # OS Estoque e Lista de Compras integrados para Abraçadeira
+        # Nomenclatura blindada para Abraçadeira e consolidação na Lista de Compras
         if fitilhos_brancos_tubos > 0: 
             relatorio["ESTOQUE"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca")] = fitilhos_brancos_tubos
-            add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", fitilhos_brancos_tubos)
+            add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", fitilhos_brancos_tubos, True)
             
         if fitilhos_pretos_tubos > 0: 
             relatorio["ESTOQUE"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta")] = fitilhos_pretos_tubos
-            add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta", fitilhos_pretos_tubos)
+            add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Preta", fitilhos_pretos_tubos, True)
 
         for cat, itens in consolidador_compras.items():
+            chaves_para_remover = []
+            
+            # Remove duplicatas exatas ignorando case e espaços nas chaves consolidadas
+            chaves_limpas = {}
+            for k in list(itens.keys()):
+                nome_limpo = re.sub(r'\s+', ' ', k[0].strip().title())
+                unidade_limpa = k[1].strip().title() if k[1] else ""
+                cor_limpa = k[2].strip().title() if k[2] else ""
+                nova_chave = (nome_limpo, unidade_limpa, cor_limpa)
+                
+                if nova_chave != k:
+                    if nova_chave in itens:
+                        itens[nova_chave] += itens[k]
+                    else:
+                        itens[nova_chave] = itens[k]
+                    chaves_para_remover.append(k)
+                    
+            for k in chaves_para_remover:
+                del itens[k]
+                
             chaves_para_remover = []
             for k, v in itens.items():
                 if isinstance(v, float):
