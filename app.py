@@ -438,7 +438,7 @@ if arquivos_excel and arquivo_csv_3d:
             if is_tubo:
                 categoria_peca = "TUBOS KID PLAY"
                 
-                # Leitura 100% direta e exata da bounding box exportada no CSV (Sem dedução, confiando na correção do 3D)
+                # Leitura 100% direta e exata da bounding box exportada no CSV (Sem dedução)
                 medida_exata = max(w, l, h) 
                     
                 dims = [0, 0, int(round(medida_exata))] # Grava a dimensão exata forçada
@@ -605,11 +605,6 @@ if arquivos_excel and arquivo_csv_3d:
                 consolidador_compras[cat_compra][chave] = 0.0 if is_float else 0
             consolidador_compras[cat_compra][chave] += qtd
 
-        tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
-        fitilhos_brancos_tubos = 0
-        fitilhos_pretos_tubos = 0
-        fitilhos_planilha_unidades = 0
-
         espumas_calc = {
             "ESPUMA CILINDRICA 20X20X60CM": 0,
             "ESPUMA CILINDRICA 26X26X60CM": 0,
@@ -668,7 +663,6 @@ if arquivos_excel and arquivo_csv_3d:
             area_base_bolinhas = sum(area_eva_por_cor.values())
             calc_bolinhas = area_base_bolinhas * 1.5
             
-            # Regra de arredondamento: 7.49 desce para 7 | 7.50 sobe para 8
             frac = calc_bolinhas - int(calc_bolinhas)
             if frac >= 0.50:
                 total_pacotes = int(calc_bolinhas) + 1
@@ -692,6 +686,12 @@ if arquivos_excel and arquivo_csv_3d:
                         add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", cor, qtd_para_cor)
         # ---------------------------------------------------------
 
+        tem_rede_preta = area_rede_por_cor.get("Preto", 0.0) > 0
+        fitilhos_brancos_tubos = 0
+        fitilhos_pretos_tubos = 0
+        abracadeira_composicao_unidades_branca = 0
+        abracadeira_composicao_unidades_preta = 0
+        
         for cor, metros in metragem_tubos_por_cor.items():
             pacotes_iso = math.ceil((metros * 1.25) / 64.0)
             pacotes_fitilho = math.ceil(metros * 0.08)
@@ -731,9 +731,11 @@ if arquivos_excel and arquivo_csv_3d:
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
                     
-                    # Intercepta as Abraçadeiras da composição e joga no tanque global (convertendo em pacotes no final)
+                    # Intercepta as Abraçadeiras da composição e joga na contagem de unidades para conversão de pacotes
                     if "ABRAÇADEIRA" in nome_mat:
-                        fitilhos_planilha_unidades += qtd_mat
+                        if tem_rede_preta: abracadeira_composicao_unidades_preta += qtd_mat
+                        elif cor_peca and cor_peca.upper() in ["PRETO", "MARROM"]: abracadeira_composicao_unidades_preta += qtd_mat
+                        else: abracadeira_composicao_unidades_branca += qtd_mat
                     elif "PARAFUSO" in nome_mat or "ARRUELA" in nome_mat or "PORCA" in nome_mat or " P." in nome_mat or nome_mat.startswith("P."):
                         add_compra("PARAFUSOS E FERRAGENS", nome_final_mat, unidade, cor_final, qtd_mat, True)
                     elif "TUBO" in nome_mat or "METALON" in nome_mat or "FERRO" in nome_mat or "CANTONEIRA" in nome_mat:
@@ -784,6 +786,7 @@ if arquivos_excel and arquivo_csv_3d:
                 relatorio["CHECK LIST DE EXPEDIÇÃO"]['agregados'][k] = v
 
         # (7) MOTOR DE PARAFUSOS DO CLIENTE
+        fitilhos_planilha_unidades = 0
         if "PARAFUSOS" not in relatorio: relatorio["PARAFUSOS"] = {}
         if 'agregados' not in relatorio["PARAFUSOS"]: relatorio["PARAFUSOS"]['agregados'] = {}
 
@@ -828,7 +831,7 @@ if arquivos_excel and arquivo_csv_3d:
                                 total_paraf = int(math.ceil(v_num * qtd_no_projeto))
                                 nome_p = str(col_p).strip()
                                 
-                                # Troca Definitiva: Captura tanto Fitilho quanto Abraçadeira e unifica a soma em pacotes
+                                # Troca Definitiva: Captura tanto Fitilho quanto Abraçadeira da aba de Parafusos e unifica
                                 if "FITILHO" in normalizar_nome_cruzamento(nome_p) or "ABRAÇADEIRA" in normalizar_nome_cruzamento(nome_p):
                                     fitilhos_planilha_unidades += total_paraf
                                 else:
@@ -850,12 +853,23 @@ if arquivos_excel and arquivo_csv_3d:
             relatorio["PARAFUSOS"]['agregados'][("Cordão", "", "")] = total_fardos_rede
             add_compra("ESTOQUE", "Cordão", "", "", total_fardos_rede)
 
+        # ---------------------------------------------------------
+        # SOMA E CONVERSÃO DE ABRAÇADEIRAS GLOBAIS (Montagem Externa + Composição Fábrica)
+        # ---------------------------------------------------------
+        # Pega as unidades lidas na Aba de Parafusos + unidades lidas na Aba de Composição e divide por 100
         pacotes_extra_planilha = int(math.ceil(fitilhos_planilha_unidades / 100.0))
+        pacotes_extra_comp_branca = int(math.ceil(abracadeira_composicao_unidades_branca / 100.0))
+        pacotes_extra_comp_preta = int(math.ceil(abracadeira_composicao_unidades_preta / 100.0))
+        
         if pacotes_extra_planilha > 0:
             if tem_rede_preta: fitilhos_pretos_tubos += pacotes_extra_planilha
             else: fitilhos_brancos_tubos += pacotes_extra_planilha
+            
+        # Soma os pacotes convertidos da composição ao total
+        fitilhos_brancos_tubos += pacotes_extra_comp_branca
+        fitilhos_pretos_tubos += pacotes_extra_comp_preta
                 
-        # Nomenclatura blindada para Abraçadeira e consolidação MÁXIMA na Lista de Compras
+        # Nomenclatura blindada para Abraçadeira que vai para o ESTOQUE (painel) E para COMPRAS (parafusos e ferragens)
         if fitilhos_brancos_tubos > 0: 
             relatorio["ESTOQUE"]['agregados'][("Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca")] = fitilhos_brancos_tubos
             add_compra("PARAFUSOS E FERRAGENS", "Abraçadeira 340x4,8Mm", "Pacote(s)", "Branca", fitilhos_brancos_tubos, True)
