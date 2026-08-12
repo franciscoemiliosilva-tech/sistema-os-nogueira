@@ -54,11 +54,12 @@ def corrigir_ortografia_cor(cor_bruta):
         if "CLAR" in texto: cores_detectadas.append("Azul Claro")
         elif "ESCUR" in texto: cores_detectadas.append("Azul Escuro")
         else: cores_detectadas.append("Azul")
-    if "PRET" in texto: cores_detectadas.append("Preto")
+    if "PRET" in texto or "PRETA" in texto: cores_detectadas.append("Preto")
     if "LARAN" in texto: cores_detectadas.append("Laranja")
     if "MARRO" in texto: cores_detectadas.append("Marrom")
     if "ROX" in texto: cores_detectadas.append("Roxo")
     if "ROS" in texto: cores_detectadas.append("Rosa")
+    if "CINZA" in texto: cores_detectadas.append("Cinza")
     
     base = " / ".join(cores_detectadas) if cores_detectadas else texto.title()
     if "NEON" in texto and "Neon" not in base: base = f"{base} Neon"
@@ -457,9 +458,10 @@ if arquivos_excel and arquivo_csv_3d:
                 
             nome_amigavel_upper = nome_amigavel.upper()
                 
-            # Filtro Inteligente de Bolinhas: Ignora se for Piscina, Rede, Escada, etc.
+            # Filtro Inteligente de Bolinhas
             if "BOLINHA" in nome_amigavel_upper and not is_conexao_nativa:
-                if any(x in nome_amigavel_upper for x in ["PISCINA", "REDE", "PISO", "CONTEN", "PORTA", "SACO", "ESCAD"]):
+                # Ignora a cor se for uma estrutura (Rampa, Degrau, Escada, Piscina, Rede)
+                if any(x in nome_amigavel_upper for x in ["PISCINA", "REDE", "PISO", "CONTEN", "PORTA", "SACO", "ESCAD", "RAMPA", "DEGRAU", "ACESS", "PASSA", "ESTRUTURA"]):
                     pass 
                 else:
                     cores_bolinhas.add(cor_limpa)
@@ -784,6 +786,10 @@ if arquivos_excel and arquivo_csv_3d:
         # MOTOR DE COMPOSIÇÃO - EXPLOSÃO E CONSOLIDAÇÃO
         # ---------------------------------------------------------
         for (cod_peca, cor_peca), qtd_peca in contagem_codigos_oficiais.items():
+            
+            nome_oficial_mestre = banco_dados.get(cod_peca, {}).get('nome', '').upper()
+            is_cama_mestre = any(x in nome_oficial_mestre for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
+            
             if cod_peca in dict_composicao:
                 receita = dict_composicao[cod_peca]
                 for mat in receita:
@@ -798,7 +804,8 @@ if arquivos_excel and arquivo_csv_3d:
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
 
-                    if cod_peca in codigos_pisos:
+                    # TRAVA DEFINITIVA DE LONA E MANTA (IGNORA SE FOR PISO OU CAMA ELÁSTICA)
+                    if cod_peca in codigos_pisos or is_cama_mestre:
                         if "LONA" in nome_mat or "MANTA" in nome_mat or "7144" in nome_mat:
                             continue
                     
