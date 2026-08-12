@@ -399,7 +399,6 @@ if arquivos_excel and arquivo_csv_3d:
         lista_auditoria = [] 
         area_marcenaria_m2 = 0.0
         
-        # Variáveis exclusivas para Manta e Lona matemática
         area_total_espuma_m2 = 0.0
         lona_calculada_por_cor = {}
         
@@ -456,25 +455,29 @@ if arquivos_excel and arquivo_csv_3d:
                 area_rede_por_cor[cor_limpa] = area_rede_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
                 continue
                 
-            if "BOLINHA" in nome_amigavel.upper() and not is_conexao_nativa:
-                cores_bolinhas.add(cor_limpa)
-                continue
+            nome_amigavel_upper = nome_amigavel.upper()
+                
+            # Filtro Inteligente de Bolinhas: Ignora se for Piscina, Rede, Escada, etc.
+            if "BOLINHA" in nome_amigavel_upper and not is_conexao_nativa:
+                if any(x in nome_amigavel_upper for x in ["PISCINA", "REDE", "PISO", "CONTEN", "PORTA", "SACO", "ESCAD"]):
+                    pass 
+                else:
+                    cores_bolinhas.add(cor_limpa)
+                    continue
                 
             is_impresso = False
-            nome_amigavel_upper = nome_amigavel.upper()
             cor_limpa_upper = cor_limpa.upper()
             if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
                 is_impresso = True
 
             is_contencao_flag = "CONTEN" in nome_amigavel_upper
+            is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
 
-            if categoria_peca == "PISOS E CONTENÇÕES" or is_contencao_flag:
-                # 1. Área para Marcenaria e para Manta de Espuma
+            if (categoria_peca == "PISOS E CONTENÇÕES" or is_contencao_flag) and not is_cama_elastica:
                 area = (dims[1] * dims[2]) / 10000.0
                 area_marcenaria_m2 += area
                 area_total_espuma_m2 += area
                 
-                # 2. Metragem Lona (Linear Baseada na Regra do 3D)
                 is_triangulo = "TRIANG" in nome_amigavel_upper or "TRIÂNG" in nome_amigavel_upper
                 
                 if is_triangulo:
@@ -482,15 +485,11 @@ if arquivos_excel and arquivo_csv_3d:
                 elif is_contencao_flag:
                     metros_lona = (dims[2] + 20.0) / 100.0
                 else:
-                    # Pisos normais ou Pisos em L
                     metros_lona = ((dims[1] + 20.0) * 2.0) / 100.0
                     
                 if cor_limpa.title() not in lona_calculada_por_cor:
                     lona_calculada_por_cor[cor_limpa.title()] = 0.0
                 lona_calculada_por_cor[cor_limpa.title()] += metros_lona
-
-            # Cama elástica e afins puxando a medida do 3D
-            is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
 
             items_parsed.append({
                 'cat': categoria_peca, 'nome': nome_amigavel, 'cor': cor_limpa,
@@ -799,7 +798,6 @@ if arquivos_excel and arquivo_csv_3d:
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
 
-                    # Trava para não duplicar Lona e Espuma que já foram calculadas matematicamente pelo 3D
                     if cod_peca in codigos_pisos:
                         if "LONA" in nome_mat or "MANTA" in nome_mat or "7144" in nome_mat:
                             continue
