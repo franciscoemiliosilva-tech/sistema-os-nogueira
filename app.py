@@ -59,7 +59,8 @@ def corrigir_ortografia_cor(cor_bruta):
     if "LARAN" in texto: cores_detectadas.append("Laranja")
     if "MARRO" in texto: cores_detectadas.append("Marrom")
     if "ROX" in texto: cores_detectadas.append("Roxo")
-    if "ROS" in texto: cores_detectadas.append("Rosa")
+    if "PINK" in texto: cores_detectadas.append("Pink")
+    if "ROS" in texto and "PINK" not in texto: cores_detectadas.append("Rosa")
     if "CINZA" in texto: cores_detectadas.append("Cinza")
     
     base = " / ".join(cores_detectadas) if cores_detectadas else texto.title()
