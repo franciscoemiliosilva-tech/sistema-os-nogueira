@@ -69,14 +69,32 @@ def corrigir_ortografia_cor(cor_bruta):
 def parse_dim(val, campo='', item=''):
     if pd.isna(val):
         raise ValueError(f"{item or 'Item'}: campo {campo or 'dimensão'} sem valor")
+
+    # O exportador 3D pode fornecer números em notação científica,
+    # por exemplo 9.15527e-05. Primeiro tentamos a conversão direta,
+    # que preserva corretamente esse formato.
     texto = str(val).strip().replace(',', '.')
-    texto = re.sub(r'[^\d.-]', '', texto)
-    if texto in {'', '-', '.', '-.'}:
-        raise ValueError(f"{item or 'Item'}: valor inválido em {campo or 'dimensão'}: {val!r}")
     try:
-        return float(texto)
+        numero = float(texto)
     except (TypeError, ValueError):
-        raise ValueError(f"{item or 'Item'}: valor inválido em {campo or 'dimensão'}: {val!r}")
+        # Fallback para valores acompanhados de texto/unidade.
+        # A regex também aceita notação científica.
+        match = re.search(r'[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?', texto)
+        if not match:
+            raise ValueError(f"{item or 'Item'}: valor inválido em {campo or 'dimensão'}: {val!r}")
+        try:
+            numero = float(match.group(0))
+        except (TypeError, ValueError):
+            raise ValueError(f"{item or 'Item'}: valor inválido em {campo or 'dimensão'}: {val!r}")
+
+    if not math.isfinite(numero):
+        raise ValueError(f"{item or 'Item'}: valor não finito em {campo or 'dimensão'}: {val!r}")
+
+    # Pequenos resíduos numéricos do CAD são tratados como zero.
+    if abs(numero) < 1e-4:
+        numero = 0.0
+
+    return numero
 
 # --- GERADOR DO HTML PROFISSIONAL (A4) ---
 def gerar_html_os(categoria, dados, cliente, projeto):
