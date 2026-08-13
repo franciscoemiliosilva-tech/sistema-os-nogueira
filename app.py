@@ -13,9 +13,9 @@ st.set_page_config(page_title="ERP Produção - Nogueira", layout="wide", initia
 st.sidebar.image("https://img.icons8.com/color/96/000000/settings--v1.png", width=60)
 st.sidebar.markdown("### 📝 Configurações da OS")
 
-st.sidebar.caption("O sistema extrai automático do CSV. Use os campos abaixo APENAS se quiser forçar outro nome na OS:")
-cliente_manual = st.sidebar.text_input("Forçar Nome do Cliente", "")
-projeto_manual = st.sidebar.text_input("Forçar Número do PV", "")
+st.sidebar.caption("O sistema extrai os dados dos CSVs. Em modo semanal, deixe os campos abaixo vazios para usar o cabeçalho consolidado automaticamente.")
+cliente_manual = st.sidebar.text_input("Forçar Cliente / Cabeçalho", "")
+projeto_manual = st.sidebar.text_input("Forçar PV / Identificação", "")
 
 st.title("Sistema Gerador de Ordem de Serviço")
 st.markdown("---")
@@ -303,10 +303,20 @@ def gerar_html_os(categoria, dados, cliente, projeto):
 
 # --- UPLOAD DE ARQUIVOS ---
 col_u1, col_u2 = st.columns(2)
-with col_u1: arquivos_excel = st.file_uploader("1. Planilhas (.xlsx) - Suba a MESTRE e a COMPOSIÇÃO", type=["xlsx"], accept_multiple_files=True)
-with col_u2: arquivo_csv_3d = st.file_uploader("2. Projeto 3D (.csv)", type=["csv"])
+with col_u1:
+    arquivos_excel = st.file_uploader(
+        "1. Planilhas (.xlsx) - Suba a MESTRE e a COMPOSIÇÃO",
+        type=["xlsx"],
+        accept_multiple_files=True
+    )
+with col_u2:
+    arquivos_csv_3d = st.file_uploader(
+        "2. Projetos 3D (.csv) - Selecione um ou vários projetos da semana",
+        type=["csv"],
+        accept_multiple_files=True
+    )
 
-if arquivos_excel and arquivo_csv_3d:
+if arquivos_excel and arquivos_csv_3d:
     try:
         arquivo_mestre = None
         arquivo_comp = None
@@ -325,48 +335,143 @@ if arquivos_excel and arquivo_csv_3d:
                 else:
                     arquivo_mestre = f
             
-        if not arquivo_mestre: arquivo_mestre = arquivos_excel[0]
+        if not arquivo_mestre:
+            arquivo_mestre = arquivos_excel[0]
         
-        # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
-        df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
-
+        # --- LEITURA E SANITIZAÇÃO DE UM OU VÁRIOS CSVs 3D ---
         colunas_obrigatorias = {'Name', 'Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ'}
-        faltantes = sorted(colunas_obrigatorias - set(df_3d.columns))
-        if faltantes:
-            raise ValueError('CSV incompatível. Colunas ausentes: ' + ', '.join(faltantes))
+        dataframes_3d = []
+        resumo_projetos = []
+        total_duplicados_suspeitos = 0
 
-        for col_num in ['Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']:
-            df_3d[col_num] = pd.to_numeric(df_3d[col_num].astype(str).str.replace(',', '.', regex=False), errors='coerce')
-        invalidos = df_3d[['Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']].isna().any(axis=1)
-        if invalidos.any():
-            amostra = df_3d.loc[invalidos, ['Name', 'Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']].head(10)
-            raise ValueError('CSV contém dimensões/posições inválidas. Revise os itens: ' + '; '.join(amostra.astype(str).agg(' | '.join, axis=1).tolist()))
-        
-        # Filtro Anti-Clone
-        df_3d['X_round'] = df_3d['PosX'].round(0)
-        df_3d['Y_round'] = df_3d['PosY'].round(0)
-        df_3d['Z_round'] = df_3d['PosZ'].round(0)
-        
+        def extrair_cliente_projeto(df_csv, nome_arquivo):
+            cliente_csv, projeto_csv = "", ""
+
+            for col in df_csv.columns:
+                nome_col = str(col).upper()
+                if "CLIENTE" in nome_col and len(df_csv) > 0:
+                    val = str(df_csv[col].iloc[0]).strip()
+                    if val.lower() != 'nan':
+                        cliente_csv = val
+                if ("PV" in nome_col or "PROJETO" in nome_col) and len(df_csv) > 0:
+                    val = str(df_csv[col].iloc[0]).strip()
+                    if val.lower() != 'nan':
+                        projeto_csv = val
+
+            filename = os.path.splitext(nome_arquivo)[0].strip()
+            if not cliente_csv or not projeto_csv:
+                if " - " in filename:
+                    parts = [p.strip() for p in filename.split(" - ", 1)]
+                    primeiro = parts[0]
+                    segundo = parts[1] if len(parts) > 1 else ""
+                    if re.fullmatch(r'\d+', primeiro):
+                        projeto_csv = projeto_csv or primeiro
+                        cliente_csv = cliente_csv or segundo
+                    else:
+                        cliente_csv = cliente_csv or primeiro
+                        projeto_csv = projeto_csv or segundo
+                elif "_" in filename:
+                    parts = [p.strip() for p in filename.split("_", 1)]
+                    cliente_csv = cliente_csv or parts[0]
+                    if len(parts) > 1:
+                        projeto_csv = projeto_csv or parts[1]
+                else:
+                    cliente_csv = cliente_csv or filename
+
+            return cliente_csv or "NÃO INFORMADO", projeto_csv or "-"
+
+        for arquivo_csv_3d in arquivos_csv_3d:
+            try:
+                arquivo_csv_3d.seek(0)
+                df_csv = pd.read_csv(arquivo_csv_3d, sep='\t')
+            except Exception as erro_csv:
+                raise ValueError(f"Falha ao ler '{arquivo_csv_3d.name}': {erro_csv}")
+
+            faltantes = sorted(colunas_obrigatorias - set(df_csv.columns))
+            if faltantes:
+                raise ValueError(
+                    f"CSV '{arquivo_csv_3d.name}' incompatível. Colunas ausentes: " + ', '.join(faltantes)
+                )
+
+            for col_num in ['Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']:
+                df_csv[col_num] = pd.to_numeric(
+                    df_csv[col_num].astype(str).str.replace(',', '.', regex=False),
+                    errors='coerce'
+                )
+
+            invalidos = df_csv[['Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']].isna().any(axis=1)
+            if invalidos.any():
+                amostra = df_csv.loc[invalidos, ['Name', 'Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']].head(10)
+                raise ValueError(
+                    f"CSV '{arquivo_csv_3d.name}' contém dimensões/posições inválidas. Revise os itens: "
+                    + '; '.join(amostra.astype(str).agg(' | '.join, axis=1).tolist())
+                )
+
+            # Auditoria de sobreposição é feita DENTRO de cada projeto.
+            # Nunca cruzamos posições de CSVs diferentes.
+            df_csv['X_round'] = df_csv['PosX'].round(0)
+            df_csv['Y_round'] = df_csv['PosY'].round(0)
+            df_csv['Z_round'] = df_csv['PosZ'].round(0)
+            duplicados_mask = df_csv.duplicated(
+                subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'],
+                keep=False
+            )
+            qtd_dup = int(duplicados_mask.sum())
+            total_duplicados_suspeitos += qtd_dup
+
+            cliente_csv, projeto_csv = extrair_cliente_projeto(df_csv, arquivo_csv_3d.name)
+            df_csv['_arquivo_origem'] = arquivo_csv_3d.name
+            df_csv['_cliente_origem'] = cliente_csv
+            df_csv['_projeto_origem'] = projeto_csv
+            dataframes_3d.append(df_csv)
+
+            resumo_projetos.append({
+                'PV': projeto_csv,
+                'Cliente': cliente_csv,
+                'Arquivo': arquivo_csv_3d.name,
+                'Objetos 3D': len(df_csv),
+                'Duplicados suspeitos': qtd_dup
+            })
+
+        if not dataframes_3d:
+            raise ValueError("Nenhum CSV 3D válido foi carregado.")
+
+        df_3d = pd.concat(dataframes_3d, ignore_index=True, sort=False)
         qt_original = len(df_3d)
-        duplicados_mask = df_3d.duplicated(subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'], keep=False)
         qt_limpo = qt_original
 
-        if duplicados_mask.any():
-            st.warning(f"⚠️ Auditoria: foram encontradas {int(duplicados_mask.sum())} linhas potencialmente duplicadas/sobrepostas. Nenhuma peça foi removida automaticamente.")
-        
-        cliente_csv, projeto_csv = "", ""
-        for col in df_3d.columns:
-            if "CLIENTE" in str(col).upper(): val = str(df_3d[col].iloc[0]); cliente_csv = val if val != 'nan' else ""
-            if "PV" in str(col).upper() or "PROJETO" in str(col).upper(): val = str(df_3d[col].iloc[0]); projeto_csv = val if val != 'nan' else ""
-                
-        if not cliente_csv:
-            filename = arquivo_csv_3d.name.replace('.csv', '')
-            if " - " in filename: parts = filename.split(" - "); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
-            elif "_" in filename: parts = filename.split("_"); cliente_csv = parts[0]; projeto_csv = parts[1] if len(parts) > 1 else projeto_csv
-            else: cliente_csv = filename
+        qtd_projetos = len(resumo_projetos)
+        modo_semanal = qtd_projetos > 1
 
-        cliente_final = cliente_manual if cliente_manual else (cliente_csv if cliente_csv else "NÃO INFORMADO")
-        projeto_final = projeto_manual if projeto_manual else (projeto_csv if projeto_csv else "-")
+        if modo_semanal:
+            st.success(
+                f"📅 Produção semanal ativada: {qtd_projetos} projetos carregados, "
+                f"{qt_original} objetos 3D no total."
+            )
+        else:
+            st.info(f"Projeto carregado: {resumo_projetos[0]['PV']} - {resumo_projetos[0]['Cliente']}")
+
+        if total_duplicados_suspeitos > 0:
+            st.warning(
+                f"⚠️ Auditoria: foram encontradas {total_duplicados_suspeitos} linhas potencialmente "
+                "duplicadas/sobrepostas nos projetos. Nenhuma peça foi removida automaticamente."
+            )
+
+        with st.expander("📋 Projetos carregados na produção semanal", expanded=modo_semanal):
+            st.dataframe(pd.DataFrame(resumo_projetos), use_container_width=True, hide_index=True)
+
+        projetos_validos = [str(p['PV']) for p in resumo_projetos if p['PV'] and p['PV'] != '-']
+        clientes_validos = [str(p['Cliente']) for p in resumo_projetos if p['Cliente'] and p['Cliente'] != 'NÃO INFORMADO']
+
+        if modo_semanal:
+            cliente_auto = f"PRODUÇÃO SEMANAL - {qtd_projetos} PROJETOS"
+            projeto_auto = ", ".join(dict.fromkeys(projetos_validos)) if projetos_validos else "SEM PV INFORMADO"
+        else:
+            cliente_auto = clientes_validos[0] if clientes_validos else "NÃO INFORMADO"
+            projeto_auto = projetos_validos[0] if projetos_validos else "-"
+
+        cliente_final = cliente_manual if cliente_manual else cliente_auto
+        projeto_final = projeto_manual if projeto_manual else projeto_auto
 
         # --- MOTOR DE LEITURA BLINDADO (Aba por Aba) ---
         banco_dados = {}
