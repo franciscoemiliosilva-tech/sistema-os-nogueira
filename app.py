@@ -4,6 +4,7 @@ import re
 import math
 import os
 import base64
+from html import escape
 from datetime import datetime
 
 st.set_page_config(page_title="ERP Produção - Nogueira", layout="wide", initial_sidebar_state="expanded")
@@ -65,13 +66,24 @@ def corrigir_ortografia_cor(cor_bruta):
     if "NEON" in texto and "Neon" not in base: base = f"{base} Neon"
     return base
 
-def parse_dim(val):
-    try: return float(re.sub(r'[^\d.-]', '', str(val).replace(',', '.')))
-    except: return 0.0
+def parse_dim(val, campo='', item=''):
+    if pd.isna(val):
+        raise ValueError(f"{item or 'Item'}: campo {campo or 'dimensão'} sem valor")
+    texto = str(val).strip().replace(',', '.')
+    texto = re.sub(r'[^\d.-]', '', texto)
+    if texto in {'', '-', '.', '-.'}:
+        raise ValueError(f"{item or 'Item'}: valor inválido em {campo or 'dimensão'}: {val!r}")
+    try:
+        return float(texto)
+    except (TypeError, ValueError):
+        raise ValueError(f"{item or 'Item'}: valor inválido em {campo or 'dimensão'}: {val!r}")
 
 # --- GERADOR DO HTML PROFISSIONAL (A4) ---
 def gerar_html_os(categoria, dados, cliente, projeto):
     data_atual = datetime.now().strftime("%d/%m/%Y")
+    categoria = escape(str(categoria))
+    cliente = escape(str(cliente))
+    projeto = escape(str(projeto))
     
     logo_html = ""
     try:
@@ -165,9 +177,9 @@ def gerar_html_os(categoria, dados, cliente, projeto):
                 elif isinstance(qtd, float):
                     qtd = f"{qtd:.2f}"
                 
-                nome = chave[0]
-                medida = chave[1] if chave[1] else "-"
-                cor = f" ({chave[2]})" if chave[2] else ""
+                nome = escape(str(chave[0]))
+                medida = escape(str(chave[1])) if chave[1] else "-"
+                cor = f" ({escape(str(chave[2]))})" if chave[2] else ""
                 linhas_tabela += f'<tr><td>{nome}{cor}</td><td class="center">{medida}</td><td class="center bold">{qtd}</td>{td_ok}</tr>'
                 
                 try: total_q += float(qtd)
@@ -175,15 +187,16 @@ def gerar_html_os(categoria, dados, cliente, projeto):
     else:
         if 'lista_sequencial' in dados:
             for linha in dados['lista_sequencial']:
+                linha = escape(str(linha))
                 linhas_tabela += f'<tr><td>{linha}</td><td class="center">-</td><td class="center bold">1</td>{td_ok}</tr>'
                 total_q += 1
 
         if 'agregados' in dados:
             for chave in sorted(dados['agregados'].keys(), key=lambda x: x[0]):
                 qtd = dados['agregados'][chave]
-                nome = chave[0]
-                medida = chave[1] if chave[1] else ""
-                cor = f" ({chave[2]})" if chave[2] else ""
+                nome = escape(str(chave[0]))
+                medida = escape(str(chave[1])) if chave[1] else ""
+                cor = f" ({escape(str(chave[2]))})" if chave[2] else ""
                 linhas_tabela += f'<tr><td>{nome}{cor}</td><td class="center">{medida}</td><td class="center bold">{qtd}</td>{td_ok}</tr>'
                 try: total_q += float(qtd)
                 except: pass
@@ -298,6 +311,18 @@ if arquivos_excel and arquivo_csv_3d:
         
         # --- LEITURA E SANITIZAÇÃO DE DADOS 3D ---
         df_3d = pd.read_csv(arquivo_csv_3d, sep='\t')
+
+        colunas_obrigatorias = {'Name', 'Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ'}
+        faltantes = sorted(colunas_obrigatorias - set(df_3d.columns))
+        if faltantes:
+            raise ValueError('CSV incompatível. Colunas ausentes: ' + ', '.join(faltantes))
+
+        for col_num in ['Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']:
+            df_3d[col_num] = pd.to_numeric(df_3d[col_num].astype(str).str.replace(',', '.', regex=False), errors='coerce')
+        invalidos = df_3d[['Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']].isna().any(axis=1)
+        if invalidos.any():
+            amostra = df_3d.loc[invalidos, ['Name', 'Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']].head(10)
+            raise ValueError('CSV contém dimensões/posições inválidas. Revise os itens: ' + '; '.join(amostra.astype(str).agg(' | '.join, axis=1).tolist()))
         
         # Filtro Anti-Clone
         df_3d['X_round'] = df_3d['PosX'].round(0)
@@ -305,11 +330,11 @@ if arquivos_excel and arquivo_csv_3d:
         df_3d['Z_round'] = df_3d['PosZ'].round(0)
         
         qt_original = len(df_3d)
-        df_3d = df_3d.drop_duplicates(subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'])
-        qt_limpo = len(df_3d)
-        
-        if qt_original != qt_limpo:
-            st.warning(f"🧹 Filtro Ativado: O sistema deletou {qt_original - qt_limpo} peças duplicadas/sobrepostas no 3D.")
+        duplicados_mask = df_3d.duplicated(subset=['Name', 'Width', 'Length', 'Height', 'X_round', 'Y_round', 'Z_round'], keep=False)
+        qt_limpo = qt_original
+
+        if duplicados_mask.any():
+            st.warning(f"⚠️ Auditoria: foram encontradas {int(duplicados_mask.sum())} linhas potencialmente duplicadas/sobrepostas. Nenhuma peça foi removida automaticamente.")
         
         cliente_csv, projeto_csv = "", ""
         for col in df_3d.columns:
@@ -437,11 +462,12 @@ if arquivos_excel and arquivo_csv_3d:
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
 
-            w = parse_dim(row.get('Width', 0)); l = parse_dim(row.get('Length', 0)); h = parse_dim(row.get('Height', 0))
-            dims = sorted([int(round(w)), int(round(l)), int(round(h))])
-            px = parse_dim(row.get('PosX', 0)); py = parse_dim(row.get('PosY', 0)); pz = parse_dim(row.get('PosZ', 0))
+            w = parse_dim(row.get('Width', 0), 'Width', nome_original); l = parse_dim(row.get('Length', 0), 'Length', nome_original); h = parse_dim(row.get('Height', 0), 'Height', nome_original)
+            dims_reais = sorted([w, l, h])
+            dims = [int(round(x)) for x in dims_reais]
+            px = parse_dim(row.get('PosX', 0), 'PosX', nome_original); py = parse_dim(row.get('PosY', 0), 'PosY', nome_original); pz = parse_dim(row.get('PosZ', 0), 'PosZ', nome_original)
             
-            is_tubo = "TUBOS KID PLAY" in categoria_peca or (not is_conexao_nativa and "T" in nome_original[:2])
+            is_tubo = ("TUBOS KID PLAY" in categoria_peca) or (not is_conexao_nativa and bool(re.match(r'^T\d{2}\b', nome_original)))
             if is_tubo:
                 categoria_peca = "TUBOS KID PLAY"
                 medida_exata = max(w, l, h) 
@@ -450,10 +476,10 @@ if arquivos_excel and arquivo_csv_3d:
                 nome_amigavel = "Tubo de Kid Play" 
                 
             if "EVA" in nome_amigavel.upper():
-                area_eva_por_cor[cor_limpa] = area_eva_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
+                area_eva_por_cor[cor_limpa] = area_eva_por_cor.get(cor_limpa, 0.0) + ((dims_reais[1] * dims_reais[2]) / 10000.0)
                 continue
             if "REDE" in nome_amigavel.upper() or "REDE" in categoria_peca:
-                area_rede_por_cor[cor_limpa] = area_rede_por_cor.get(cor_limpa, 0.0) + ((dims[1] * dims[2]) / 10000.0)
+                area_rede_por_cor[cor_limpa] = area_rede_por_cor.get(cor_limpa, 0.0) + ((dims_reais[1] * dims_reais[2]) / 10000.0)
                 continue
                 
             nome_amigavel_upper = nome_amigavel.upper()
@@ -476,7 +502,7 @@ if arquivos_excel and arquivo_csv_3d:
             is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
 
             if (categoria_peca == "PISOS E CONTENÇÕES" or is_contencao_flag) and not is_cama_elastica:
-                area = (dims[1] * dims[2]) / 10000.0
+                area = (dims_reais[1] * dims_reais[2]) / 10000.0
                 area_marcenaria_m2 += area
                 area_total_espuma_m2 += area
                 
@@ -738,7 +764,7 @@ if arquivos_excel and arquivo_csv_3d:
             if total_pacotes == 0: total_pacotes = 1
             
             qtd_cores = len(cores_bolinhas)
-            cores_lista = list(cores_bolinhas)
+            cores_lista = sorted(cores_bolinhas)
             if qtd_cores > 3: 
                 relatorio["ESTOQUE"]['agregados'][("Pacote(s) de Bolinhas", "", "Coloridas")] = total_pacotes
                 add_compra("ESTOQUE", "Pacote(s) de Bolinhas", "", "Coloridas", total_pacotes)
@@ -903,12 +929,15 @@ if arquivos_excel and arquivo_csv_3d:
         if df_paraf is not None:
             try:
                 df_paraf_calc = df_paraf.copy()
-                header_idx = 0
+                header_idx = None
                 for idx, row_temp in df_paraf_calc.iterrows():
                     if str(row_temp[0]).strip().upper() == "ITENS":
                         header_idx = idx
                         break
                 
+                if header_idx is None:
+                    raise ValueError("Tabela de parafusos inválida: cabeçalho 'ITENS' não encontrado.")
+
                 df_paraf_calc.columns = df_paraf_calc.iloc[header_idx]
                 df_paraf_calc = df_paraf_calc[header_idx+1:].fillna(0)
                 col_itens = df_paraf_calc.columns[0]
