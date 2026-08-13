@@ -517,7 +517,24 @@ if arquivos_excel and arquivo_csv_3d:
                 is_impresso = True
 
             is_contencao_flag = "CONTEN" in nome_amigavel_upper
-            is_cama_elastica = any(x in nome_amigavel_upper for x in ["CAMA ELÁSTICA", "CAMA ELASTICA", "ÁREA DE PULO", "AREA DE PULO", "FERRO FURADO", "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"])
+
+            # Componentes de cama elastica. O cadastro Mestre usa o nome
+            # "Ferro com Furo Para Camaelastica=S15_", sem espaco entre
+            # CAMA e ELASTICA, por isso a regra antiga nao reconhecia o S15.
+            is_ferro_furo_cama = (
+                codigo_base == "S15"
+                or "FERRO COM FURO" in nome_amigavel_upper
+                or "FERRO C/ FURO" in nome_amigavel_upper
+                or "FERRO FURADO" in nome_amigavel_upper
+            )
+            is_cama_elastica = is_ferro_furo_cama or any(
+                x in nome_amigavel_upper
+                for x in [
+                    "CAMA ELÁSTICA", "CAMA ELASTICA", "CAMAELASTICA",
+                    "ÁREA DE PULO", "AREA DE PULO",
+                    "PROTEÇÃO PARA CAMA", "PROTECAO PARA CAMA"
+                ]
+            )
 
             if (categoria_peca == "PISOS E CONTENÇÕES" or is_contencao_flag) and not is_cama_elastica:
                 area = (dims_reais[1] * dims_reais[2]) / 10000.0
@@ -542,6 +559,8 @@ if arquivos_excel and arquivo_csv_3d:
                 'is_piso_contencao': categoria_peca == "PISOS E CONTENÇÕES",
                 'is_contencao': is_contencao_flag,
                 'is_cama_elastica': is_cama_elastica,
+                'is_ferro_furo_cama': is_ferro_furo_cama,
+                'codigo_base': codigo_base,
                 'is_impresso': is_impresso,
                 'z_round': round(pz/40.0)*40.0, 'y_round': round(py/40.0)*40.0, 'x': px, 'dims': dims
             })
@@ -582,9 +601,16 @@ if arquivos_excel and arquivo_csv_3d:
 
             medida = ""
             if cat == "TUBOS KID PLAY":
-                medida = str(int(max(item['dims']))) 
+                medida = str(int(max(item['dims'])))
+            elif item.get('is_ferro_furo_cama'):
+                # Para o S15 interessa o comprimento de corte do ferro,
+                # representado pela maior dimensao geometrica do bloco 3D.
+                comprimento = max(item['dims'])
+                if comprimento > 0:
+                    medida = f"{int(comprimento)} cm" if float(comprimento).is_integer() else f"{comprimento:.1f} cm"
             elif any(x in nome_upper for x in ["CONTEN", "PORT", "FORA DE PADR", "BANNER", "ADESIV", "IMPRESS", "LONA"]):
-                if item['dims'][1] > 0 and cat != "COSTURA": medida = f"{item['dims'][2]}x{item['dims'][1]}" 
+                if item['dims'][1] > 0 and cat != "COSTURA":
+                    medida = f"{item['dims'][2]}x{item['dims'][1]}"
             elif item.get('is_cama_elastica') and item['dims'][1] > 0:
                 medida = f"{item['dims'][2]}x{item['dims'][1]}"
 
