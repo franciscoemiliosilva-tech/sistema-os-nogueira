@@ -509,6 +509,31 @@ if arquivos_excel and arquivos_csv_3d:
             'CONEXAO_T_4_SAIDAS': 'T 4 Saídas', 'CONEXAO_CRUZETA': 'Cruzeta',
             'CONEXAO_ARTICULADA': 'Articulada'
         }
+
+        # Mapa reverso para reconhecer, dentro das composicoes, itens que tambem
+        # sao pecas oficiais cadastradas na Mestre. Isso permite tratar uma
+        # composicao como uma arvore de pecas, e nao apenas como materia-prima.
+        def normalizar_nome_mestre(texto):
+            n = str(texto).upper().strip()
+            n = n.replace('º', '°')
+            n = re.sub(r'\s+', ' ', n)
+            return n
+
+        mapa_nome_para_codigo = {}
+        for cod_mestre, info_mestre in banco_dados.items():
+            nome_mestre = normalizar_nome_mestre(info_mestre.get('nome', ''))
+            if nome_mestre:
+                mapa_nome_para_codigo[nome_mestre] = cod_mestre
+
+        # Regra de negocio validada: TUBO RETO e fornecido/fabricado pela
+        # ROTTO BRASIL, embora seu cadastro historico esteja na secao de
+        # atividades da Mestre. Mantemos o codigo A21 e corrigimos o destino.
+        CODIGOS_ROTTO_FORCADOS = {'A21'}
+
+        def categoria_efetiva(codigo, categoria_original):
+            if codigo in CODIGOS_ROTTO_FORCADOS:
+                return 'ROTTO BRASIL'
+            return categoria_original
         
         # --- EXTRATOR DA COMPOSIÇÃO DE MATERIAIS ---
         dict_composicao = {}
@@ -575,7 +600,7 @@ if arquivos_excel and arquivos_csv_3d:
                 codigo_base = match_codigo.group(1).replace('O', '0')
                 if codigo_base in banco_dados:
                     nome_amigavel = padronizar_medidas_maior_menor(banco_dados[codigo_base]['nome'])
-                    categoria_peca = banco_dados[codigo_base]['cat']
+                    categoria_peca = categoria_efetiva(codigo_base, banco_dados[codigo_base]['cat'])
                     chave_cod = (codigo_base, cor_limpa)
                     contagem_codigos_oficiais[chave_cod] = contagem_codigos_oficiais.get(chave_cod, 0) + 1
                     
@@ -773,6 +798,54 @@ if arquivos_excel and arquivos_csv_3d:
             relatorio["ATIVIDADES KID PLAY"]['agregados'][("Madeira de Apoio para Escorregador", "205x08", "")] = relatorio["ATIVIDADES KID PLAY"]['agregados'].get(("Madeira de Apoio para Escorregador", "205x08", ""), 0) + qtd_escorregador_4v
             if "MARCENARIA" not in relatorio: relatorio["MARCENARIA"] = {'agregados': {}}
             relatorio["MARCENARIA"]['agregados'][("Madeira de Apoio para Escorregador", "205x08", "")] = relatorio["MARCENARIA"]['agregados'].get(("Madeira de Apoio para Escorregador", "205x08", ""), 0) + qtd_escorregador_4v
+
+        # ---------------------------------------------------------
+        # PECAS FILHAS DE COMPOSICAO (ROTTO / SUBCONJUNTOS)
+        # ---------------------------------------------------------
+        # Exemplo validado:
+        # TELEFONE=A20_ -> 1 TUBO RETO + 2 Curva 360°.
+        # As pecas filhas herdam a cor do objeto-pai no 3D.
+        # Uma auto-referencia, como TUBO RETO=A21_ contendo "TUBO RETO",
+        # nao gera uma segunda unidade porque a propria peca A21 ja foi
+        # contabilizada diretamente pelo 3D.
+        componentes_composicao_injetados = set()
+
+        for (cod_pai, cor_pai), qtd_pai in contagem_codigos_oficiais.items():
+            receita_pai = dict_composicao.get(cod_pai, [])
+            for mat in receita_pai:
+                nome_mat_norm = normalizar_nome_mestre(mat.get('material', ''))
+                cod_filho = mapa_nome_para_codigo.get(nome_mat_norm)
+                if not cod_filho:
+                    continue
+
+                # Evita auto-referencia da composicao.
+                if cod_filho == cod_pai:
+                    componentes_composicao_injetados.add((cod_pai, nome_mat_norm))
+                    continue
+
+                info_filho = banco_dados.get(cod_filho, {})
+                cat_filho = categoria_efetiva(cod_filho, info_filho.get('cat', 'OUTROS'))
+
+                # Neste momento somente pecas destinadas a ROTTO BRASIL devem
+                # virar item de producao/compra a partir da composicao.
+                if cat_filho != 'ROTTO BRASIL':
+                    continue
+
+                nome_filho = padronizar_medidas_maior_menor(info_filho.get('nome', mat.get('material', '')))
+                qtd_filho = float(mat.get('qtd', 0) or 0) * qtd_pai
+                if qtd_filho <= 0:
+                    continue
+
+                if 'ROTTO BRASIL' not in relatorio:
+                    relatorio['ROTTO BRASIL'] = {}
+                if 'agregados' not in relatorio['ROTTO BRASIL']:
+                    relatorio['ROTTO BRASIL']['agregados'] = {}
+
+                chave_filho = (nome_filho, '', cor_pai)
+                relatorio['ROTTO BRASIL']['agregados'][chave_filho] = (
+                    relatorio['ROTTO BRASIL']['agregados'].get(chave_filho, 0) + qtd_filho
+                )
+                componentes_composicao_injetados.add((cod_pai, nome_mat_norm))
 
         qtd_curva_360 = 0
         if "ROTTO BRASIL" in relatorio and 'agregados' in relatorio["ROTTO BRASIL"]:
@@ -978,6 +1051,13 @@ if arquivos_excel and arquivos_csv_3d:
                             cor_final = cor_peca.title()
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
+
+                    # Se este item da receita ja foi reconhecido como uma peca
+                    # oficial e promovido para ROTTO BRASIL (ou e auto-referencia
+                    # da peca pai), ele nao deve cair novamente como materia-prima.
+                    nome_mat_norm = normalizar_nome_mestre(mat['material'])
+                    if (cod_peca, nome_mat_norm) in componentes_composicao_injetados:
+                        continue
 
                     # TRAVA DEFINITIVA DE LONA E MANTA (IGNORA SE FOR PISO OU CAMA ELÁSTICA)
                     if cod_peca in codigos_pisos or is_cama_mestre:
