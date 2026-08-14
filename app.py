@@ -43,29 +43,58 @@ def normalizar_nome_cruzamento(texto):
     return n
 
 def corrigir_ortografia_cor(cor_bruta):
-    texto = str(cor_bruta).upper().strip()
-    cores_detectadas = []
-    if "AMAAR" in texto or "AMAR" in texto: cores_detectadas.append("Amarelo")
-    if "VERME" in texto: cores_detectadas.append("Vermelho")
-    if "VERD" in texto:
-        if "CLAR" in texto: cores_detectadas.append("Verde Claro")
-        elif "ESCUR" in texto: cores_detectadas.append("Verde Escuro")
-        else: cores_detectadas.append("Verde")
-    if "AZU" in texto:
-        if "CLAR" in texto: cores_detectadas.append("Azul Claro")
-        elif "ESCUR" in texto: cores_detectadas.append("Azul Escuro")
-        else: cores_detectadas.append("Azul")
-    if "PRET" in texto or "PRETA" in texto: cores_detectadas.append("Preto")
-    if "LARAN" in texto: cores_detectadas.append("Laranja")
-    if "MARRO" in texto: cores_detectadas.append("Marrom")
-    if "ROX" in texto: cores_detectadas.append("Roxo")
-    if "PINK" in texto: cores_detectadas.append("Pink")
-    if "ROS" in texto and "PINK" not in texto: cores_detectadas.append("Rosa")
-    if "CINZA" in texto: cores_detectadas.append("Cinza")
-    
-    base = " / ".join(cores_detectadas) if cores_detectadas else texto.title()
-    if "NEON" in texto and "Neon" not in base: base = f"{base} Neon"
-    return base
+    """Normaliza cores sem perder combinacoes nem a ordem informada pelo 3D."""
+    texto = str(cor_bruta).strip()
+    texto_upper = texto.upper()
+
+    # Separa combinacoes como "Azul Claro e Verde Claro", preservando a ordem.
+    partes = [p.strip() for p in re.split(r'\s+E\s+|\s*(?:/|\+)\s*|\s*,\s*', texto_upper) if p.strip()]
+    if not partes:
+        partes = [texto_upper]
+
+    def normalizar_parte(parte):
+        if "AMAAR" in parte or "AMAR" in parte:
+            base = "Amarelo"
+        elif "VERME" in parte:
+            base = "Vermelho"
+        elif "VERD" in parte:
+            if "CLAR" in parte: base = "Verde Claro"
+            elif "ESCUR" in parte or "ECUR" in parte: base = "Verde Escuro"
+            else: base = "Verde"
+        elif "AZU" in parte:
+            if "CLAR" in parte: base = "Azul Claro"
+            elif "ESCUR" in parte or "ECUR" in parte: base = "Azul Escuro"
+            else: base = "Azul"
+        elif "BRANC" in parte:
+            base = "Branco"
+        elif "PRET" in parte:
+            base = "Preto"
+        elif "LARAN" in parte:
+            base = "Laranja"
+        elif "MARRO" in parte:
+            base = "Marrom"
+        elif "ROX" in parte:
+            base = "Roxo"
+        elif "PINK" in parte:
+            base = "Pink"
+        elif "ROS" in parte:
+            base = "Rosa"
+        elif "CINZA" in parte:
+            base = "Cinza"
+        else:
+            base = parte.title()
+
+        if "NEON" in parte and "Neon" not in base:
+            base = f"{base} Neon"
+        return base
+
+    normalizadas = []
+    for parte in partes:
+        cor = normalizar_parte(parte)
+        if cor and cor not in normalizadas:
+            normalizadas.append(cor)
+
+    return " / ".join(normalizadas)
 
 def parse_dim(val, campo='', item=''):
     if pd.isna(val):
@@ -590,6 +619,9 @@ if arquivos_excel and arquivos_csv_3d:
         
         contagem_codigos_oficiais = {}
         codigos_pisos = set()
+        # Auditoria preventiva: qualquer codigo 3D reconhecivel que nao exista
+        # na Mestre fica visivel ao usuario, em vez de cair silenciosamente em OUTROS.
+        codigos_3d_sem_cadastro = {}
         
         for _, row in df_3d.iterrows():
             nome_original = str(row.get('Name', '')).strip().upper()
@@ -618,6 +650,8 @@ if arquivos_excel and arquivos_csv_3d:
                     
                     if categoria_peca == "PISOS E CONTENÇÕES":
                         codigos_pisos.add(codigo_base)
+                else:
+                    codigos_3d_sem_cadastro[codigo_base] = codigos_3d_sem_cadastro.get(codigo_base, 0) + 1
 
             if not is_conexao_nativa and ("MATERIAL" in cor_limpa.upper() or "SEM COR" in cor_limpa.upper()):
                 lista_auditoria.append(nome_amigavel)
@@ -733,8 +767,10 @@ if arquivos_excel and arquivos_csv_3d:
             nome_upper = item['nome'].upper()
             if cat not in relatorio: relatorio[cat] = {}
             
+            codigo_item = item.get('codigo_base', '')
             if cat not in ["TUBOS KID PLAY", "PISOS E CONTENÇÕES", "SERRALHERIA"]:
-                if "TURBILHÃO" in nome_upper: qtd_turbilhao += 1
+                if codigo_item == "A12" or "TURBILHÃO" in nome_upper:
+                    qtd_turbilhao += 1
                 
             is_nome_piso = "PISO" in nome_upper or "CONTEN" in nome_upper
             # Regras historicas da ponte em V.
@@ -742,7 +778,6 @@ if arquivos_excel and arquivos_csv_3d:
             # Longa: P10 = Ponte 210x30 e C04 = Ponte de Cinta em V 205.
             # Cada atividade alimenta o mesmo conjunto correspondente de
             # serralheria (2 quadros + 2 ferros com grapas + 2 com grapas/ganchos).
-            codigo_item = item.get('codigo_base', '')
             if (
                 codigo_item in ['P11', 'C03']
                 or ("PONTE" in nome_upper and "105" in nome_upper and "30" in nome_upper)
@@ -758,10 +793,20 @@ if arquivos_excel and arquivos_csv_3d:
                 qtd_ponte_210 += 1
                 
             if item['is_piso_contencao']:
-                if "TRIANG" in nome_upper or "TRIÂNG" in nome_upper: qtd_ferro_triangulo += 1
-                if "FORA DE PADR" in nome_upper and item['dims'][2] > 109: qtd_ferro_fora_padrao += 1
+                if codigo_item == "P02" or "TRIANG" in nome_upper or "TRIÂNG" in nome_upper:
+                    qtd_ferro_triangulo += 1
+                if (codigo_item == "P18" or "FORA DE PADR" in nome_upper) and item['dims'][2] > 109:
+                    qtd_ferro_fora_padrao += 1
 
-            if "ESCORREGADOR" in nome_upper:
+            # F01-F04 = 2 vias; F05-F08 = 3 vias; F09-F12 = 4 vias.
+            # Mantemos o texto como fallback para cadastros legados.
+            if codigo_item in {"F01", "F02", "F03", "F04"}:
+                qtd_escorregador_2v += 1
+            elif codigo_item in {"F05", "F06", "F07", "F08"}:
+                qtd_escorregador_3v += 1
+            elif codigo_item in {"F09", "F10", "F11", "F12"}:
+                qtd_escorregador_4v += 1
+            elif "ESCORREGADOR" in nome_upper:
                 if "2 VIA" in nome_upper: qtd_escorregador_2v += 1
                 elif "3 VIA" in nome_upper: qtd_escorregador_3v += 1
                 elif "4 VIA" in nome_upper: qtd_escorregador_4v += 1
@@ -795,7 +840,9 @@ if arquivos_excel and arquivos_csv_3d:
                 if chave not in relatorio[cat]['agregados']: relatorio[cat]['agregados'][chave] = 0
                 relatorio[cat]['agregados'][chave] += 1
                 
-            if any(x in nome_upper for x in ["SINUOSO 1", "SINUOSO 2", "RAMPA DE CINTA", "TURBILHÃO"]):
+            if codigo_item in {"A12", "A13", "A14", "A15"} or any(
+                x in nome_upper for x in ["SINUOSO 1", "SINUOSO 2", "RAMPA DE CINTA", "TURBILHÃO"]
+            ):
                 if "COSTURA" not in relatorio: relatorio["COSTURA"] = {}
                 if 'agregados' not in relatorio["COSTURA"]: relatorio["COSTURA"]['agregados'] = {}
                 chave_cost = (item['nome'], "", item['cor'])
@@ -856,6 +903,8 @@ if arquivos_excel and arquivos_csv_3d:
         # A20 Telefone continua na producao/compras ROTTO, mas nao e expedido como
         # uma linha separada do Telefone.
         rotto_composicao_nao_checklist = {}
+        # Contagem por codigo evita depender de nomes que podem mudar na Mestre.
+        qtd_curva_360_composicao = 0.0
 
         for (cod_pai, cor_pai), qtd_pai in contagem_codigos_oficiais.items():
             receita_pai = dict_composicao.get(cod_pai, [])
@@ -901,13 +950,15 @@ if arquivos_excel and arquivos_csv_3d:
                         rotto_composicao_nao_checklist.get(chave_filho, 0) + qtd_filho
                     )
 
+                if cod_filho == 'R01':
+                    qtd_curva_360_composicao += qtd_filho
+
                 componentes_composicao_injetados.add((cod_pai, nome_mat_norm))
 
-        qtd_curva_360 = 0
-        if "ROTTO BRASIL" in relatorio and 'agregados' in relatorio["ROTTO BRASIL"]:
-            for chave, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
-                if "CURVA" in chave[0].upper():
-                    qtd_curva_360 += qtd
+        qtd_curva_360_direta = sum(
+            qtd for (cod, _cor), qtd in contagem_codigos_oficiais.items() if cod == 'R01'
+        )
+        qtd_curva_360 = qtd_curva_360_direta + qtd_curva_360_composicao
 
         # Regra de serralheria validada para os quadros de curva 360:
         # cada TELEFONE A20 presente DIRETAMENTE no 3D gera 2 quadros;
@@ -1177,6 +1228,8 @@ if arquivos_excel and arquivos_csv_3d:
 
         # (6) CHECK LIST SUPER CATEGORIZADO
         checklist_cat = {}
+        # Itens excluidos por regras de checklist ficam registrados para auditoria.
+        itens_impressao_fora_checklist = []
         def add_check(cat_nome, nome, medida, cor, qtd):
             if cat_nome not in checklist_cat: checklist_cat[cat_nome] = {}
             chave = (nome, medida, cor)
@@ -1200,12 +1253,10 @@ if arquivos_excel and arquivos_csv_3d:
                     if cat_c == "SERRALHERIA" and "QUADRO DE CURVA 360" in nome_chk_u:
                         continue
 
-                    # Na IMPRESSAO, alem da Regua, o I02/Aplique painel curva 360
-                    # precisa ser expedido e portanto deve aparecer no checklist.
-                    if cat_c == "IMPRESSÃO" and not (
-                        "RÉGUA" in nome_chk_u or "APLIQUE PAINEL CURVA 360" in nome_chk_u
-                    ):
-                        continue
+                    # Regra validada: todos os itens que pertencem a categoria
+                    # IMPRESSAO devem aparecer tambem no CHECK LIST DE EXPEDICAO.
+                    # Isto inclui I02, I03, I04, I05, I06, Regua do Kid Play e
+                    # futuros codigos classificados como IMPRESSAO na Mestre.
 
                     # Subtrai apenas a parcela do Tubo Reto que foi criada como
                     # componente interno do Telefone. Se existir um A21 direto no
@@ -1450,6 +1501,33 @@ if arquivos_excel and arquivos_csv_3d:
 
         st.markdown("---")
         st.subheader("⚠️ Auditoria 3D")
+
+        # Blindagem de regras criticas: se um codigo usado pelas regras especiais
+        # desaparecer/for renomeado na Mestre, o app avisa antes de gerar a producao.
+        regras_criticas = {
+            "A12": "Turbilhão", "A20": "Telefone", "A21": "Tubo Reto",
+            "C03": "Ponte em V 100", "C04": "Ponte em V 205",
+            "P11": "Ponte 105x30", "P10": "Ponte 210x30",
+            "P02": "Piso Triângulo", "P18": "Piso fora de padrão",
+            "R01": "Curva 360°", "I02": "Aplique painel curva 360°",
+            "S15": "Ferro com furo para cama elástica",
+            "F01": "Fibra 2 vias", "F05": "Fibra 3 vias", "F09": "Fibra 4 vias"
+        }
+        criticos_ausentes = [f"{cod} ({desc})" for cod, desc in regras_criticas.items() if cod not in banco_dados]
+        if criticos_ausentes:
+            st.warning(
+                "⚠️ Códigos de regras críticas não encontrados na Mestre: " + ", ".join(criticos_ausentes)
+            )
+
+        if codigos_3d_sem_cadastro:
+            st.error(
+                "❌ Existem códigos no 3D sem cadastro correspondente na Mestre. "
+                "Eles podem cair em OUTROS e não alimentar regras derivadas corretamente."
+            )
+            df_sem_cadastro = pd.DataFrame(
+                sorted(codigos_3d_sem_cadastro.items()), columns=["Código 3D", "Quantidade"]
+            )
+            st.dataframe(df_sem_cadastro, use_container_width=True, hide_index=True)
 
         if total_duplicados_suspeitos > 0 and detalhes_duplicados:
             df_dup_auditoria = pd.concat(detalhes_duplicados, ignore_index=True)
