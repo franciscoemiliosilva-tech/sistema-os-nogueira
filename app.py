@@ -655,7 +655,15 @@ if arquivos_excel and arquivos_csv_3d:
                 
             is_impresso = False
             cor_limpa_upper = cor_limpa.upper()
-            if any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"]) or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"]):
+            # Itens de impressao podem ser identificados pelo nome/material ou pelo
+            # codigo oficial. O I02 (Aplique painel curva 360 polionda) nao contem
+            # as palavras ADESIV/IMPRESS/LONA, por isso precisa de regra explicita.
+            if (
+                codigo_base == "I02"
+                or "APLIQUE PAINEL CURVA 360" in nome_amigavel_upper
+                or any(x in nome_amigavel_upper for x in ["ADESIV", "IMPRESS", "LONA"])
+                or any(x in cor_limpa_upper for x in ["ADESIV", "IMPRESS", "LONA"])
+            ):
                 is_impresso = True
 
             is_contencao_flag = "CONTEN" in nome_amigavel_upper
@@ -785,7 +793,10 @@ if arquivos_excel and arquivos_csv_3d:
                 if chave_marc not in relatorio["MARCENARIA"]['agregados']: relatorio["MARCENARIA"]['agregados'][chave_marc] = 0
                 relatorio["MARCENARIA"]['agregados'][chave_marc] += 1
                 
-            if item.get('is_impresso'):
+            # Se o item ja pertence a categoria IMPRESSAO, ele ja foi agregado
+            # acima e nao deve ser somado uma segunda vez. A injecao serve apenas
+            # para itens de outras categorias que tambem exigem trabalho de impressao.
+            if item.get('is_impresso') and cat != "IMPRESSÃO":
                 if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
                 if 'agregados' not in relatorio["IMPRESSÃO"]: relatorio["IMPRESSÃO"]['agregados'] = {}
                 chave_imp = (item['nome'], medida, cor_display)
@@ -875,9 +886,18 @@ if arquivos_excel and arquivos_csv_3d:
         qtd_tubo_reto_direto = sum(
             qtd for (cod, _cor), qtd in contagem_codigos_oficiais.items() if cod == 'A21'
         )
-        qtd_quadros_curva_360 = int(round(
+        # Existem dois tipos de origem para o Quadro de curva 360:
+        # 1) regra base das curvas 360 do projeto: existindo ao menos uma Curva 360,
+        #    gera 1 quadro, que tambem deve aparecer no CHECK LIST;
+        # 2) quadros adicionais de TELEFONE A20 e TUBO RETO A21 diretos do 3D:
+        #    2 por objeto. Esses adicionais entram somente na SERRALHERIA.
+        qtd_quadro_curva_360_base = 1 if qtd_curva_360 > 0 else 0
+        qtd_quadros_curva_360_adicionais = int(round(
             (qtd_telefone_direto * 2) + (qtd_tubo_reto_direto * 2)
         ))
+        qtd_quadros_curva_360 = (
+            qtd_quadro_curva_360_base + qtd_quadros_curva_360_adicionais
+        )
 
         # (5) FIXOS, SERRALHERIA E ESTOQUE
         if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
@@ -1140,9 +1160,24 @@ if arquivos_excel and arquivos_csv_3d:
                     if cat_c == "COSTURA" and any(x in nome_chk_u for x in ["SINUOSO 1", "SINUOSO 2", "RAMPA DE CINTA", "TURBILHÃO"]): continue
                     if any(x in nome_chk_u for x in ["CINTA DE PROTEÇÃO", "PROTEÇÃO DE CURVA", "HOLOFOTE", "CAIXA DE PARAFUSOS"]): continue
                     if "QUADRO" in nome_chk_u and any(x in nome_chk_u for x in ["PONTE", "PISO SINUOSO"]): continue
-                    if cat_c == "IMPRESSÃO" and "RÉGUA" not in nome_chk_u: continue
+
+                    # O total da SERRALHERIA inclui o quadro base + os quadros
+                    # adicionais vindos de A20/A21. No CHECK LIST deve entrar
+                    # somente o quadro base (1 unidade quando houver Curva 360).
+                    if cat_c == "SERRALHERIA" and "QUADRO DE CURVA 360" in nome_chk_u:
+                        continue
+
+                    # Na IMPRESSAO, alem da Regua, o I02/Aplique painel curva 360
+                    # precisa ser expedido e portanto deve aparecer no checklist.
+                    if cat_c == "IMPRESSÃO" and not (
+                        "RÉGUA" in nome_chk_u or "APLIQUE PAINEL CURVA 360" in nome_chk_u
+                    ):
+                        continue
                         
                     add_check(cat_c, nome_chk, chv[1], chv[2], q)
+
+        if qtd_quadro_curva_360_base > 0:
+            add_check("SERRALHERIA", "Quadro de curva 360°", "", "", qtd_quadro_curva_360_base)
                     
         # --- SEPARAÇÃO DOS PISOS E CONTENÇÕES ---
         qtd_pisos_comuns = 0
