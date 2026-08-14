@@ -737,8 +737,23 @@ if arquivos_excel and arquivos_csv_3d:
                 if "TURBILHÃO" in nome_upper: qtd_turbilhao += 1
                 
             is_nome_piso = "PISO" in nome_upper or "CONTEN" in nome_upper
-            if "PONTE" in nome_upper and "105" in nome_upper and "30" in nome_upper and not is_nome_piso: qtd_ponte_105 += 1
-            if "PONTE" in nome_upper and "210" in nome_upper and "30" in nome_upper and not is_nome_piso: qtd_ponte_210 += 1
+            # Regras historicas da ponte em V. O primeiro codigo procurava
+            # explicitamente Ponte 105x30 e Ponte 210x30. A Mestre atual tambem
+            # possui C04 = Ponte de Cinta em V 205, que usa o mesmo conjunto de
+            # serralheria de 2,05 m e precisa alimentar a regra da ponte longa.
+            codigo_item = item.get('codigo_base', '')
+            if (
+                codigo_item == 'P11'
+                or ("PONTE" in nome_upper and "105" in nome_upper and "30" in nome_upper)
+            ) and not is_nome_piso:
+                qtd_ponte_105 += 1
+
+            if (
+                codigo_item in ['P10', 'C04']
+                or ("PONTE" in nome_upper and "210" in nome_upper and "30" in nome_upper)
+                or ("PONTE DE CINTA" in nome_upper and "205" in nome_upper)
+            ) and not is_nome_piso:
+                qtd_ponte_210 += 1
                 
             if item['is_piso_contencao']:
                 if "TRIANG" in nome_upper or "TRIÂNG" in nome_upper: qtd_ferro_triangulo += 1
@@ -833,6 +848,13 @@ if arquivos_excel and arquivos_csv_3d:
         # contabilizada diretamente pelo 3D.
         componentes_composicao_injetados = set()
 
+        # Quantidades que existem no relatorio ROTTO apenas por serem componentes
+        # internos de outro conjunto e, por isso, nao devem aparecer separadamente
+        # no CHECK LIST. Exemplo validado: o A21 Tubo Reto que nasce dentro do
+        # A20 Telefone continua na producao/compras ROTTO, mas nao e expedido como
+        # uma linha separada do Telefone.
+        rotto_composicao_nao_checklist = {}
+
         for (cod_pai, cor_pai), qtd_pai in contagem_codigos_oficiais.items():
             receita_pai = dict_composicao.get(cod_pai, [])
             for mat in receita_pai:
@@ -868,6 +890,15 @@ if arquivos_excel and arquivos_csv_3d:
                 relatorio['ROTTO BRASIL']['agregados'][chave_filho] = (
                     relatorio['ROTTO BRASIL']['agregados'].get(chave_filho, 0) + qtd_filho
                 )
+
+                # O Tubo Reto A21 gerado pela composicao do Telefone A20 faz parte
+                # fisicamente do conjunto Telefone. Ele deve existir em ROTTO para
+                # producao/compras, mas nao como item independente no CHECK LIST.
+                if cod_pai == 'A20' and cod_filho == 'A21':
+                    rotto_composicao_nao_checklist[chave_filho] = (
+                        rotto_composicao_nao_checklist.get(chave_filho, 0) + qtd_filho
+                    )
+
                 componentes_composicao_injetados.add((cod_pai, nome_mat_norm))
 
         qtd_curva_360 = 0
@@ -1173,8 +1204,17 @@ if arquivos_excel and arquivos_csv_3d:
                         "RÉGUA" in nome_chk_u or "APLIQUE PAINEL CURVA 360" in nome_chk_u
                     ):
                         continue
-                        
-                    add_check(cat_c, nome_chk, chv[1], chv[2], q)
+
+                    # Subtrai apenas a parcela do Tubo Reto que foi criada como
+                    # componente interno do Telefone. Se existir um A21 direto no
+                    # 3D com a mesma cor, essa unidade direta continua no checklist.
+                    q_check = q
+                    if cat_c == "ROTTO BRASIL" and chv in rotto_composicao_nao_checklist:
+                        q_check = q - rotto_composicao_nao_checklist[chv]
+                        if q_check <= 0:
+                            continue
+
+                    add_check(cat_c, nome_chk, chv[1], chv[2], q_check)
 
         if qtd_quadro_curva_360_base > 0:
             add_check("SERRALHERIA", "Quadro de curva 360°", "", "", qtd_quadro_curva_360_base)
