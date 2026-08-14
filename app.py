@@ -737,14 +737,16 @@ if arquivos_excel and arquivos_csv_3d:
                 if "TURBILHÃO" in nome_upper: qtd_turbilhao += 1
                 
             is_nome_piso = "PISO" in nome_upper or "CONTEN" in nome_upper
-            # Regras historicas da ponte em V. O primeiro codigo procurava
-            # explicitamente Ponte 105x30 e Ponte 210x30. A Mestre atual tambem
-            # possui C04 = Ponte de Cinta em V 205, que usa o mesmo conjunto de
-            # serralheria de 2,05 m e precisa alimentar a regra da ponte longa.
+            # Regras historicas da ponte em V.
+            # Curta: P11 = Ponte 105x30 e C03 = Ponte de Cinta em V 100.
+            # Longa: P10 = Ponte 210x30 e C04 = Ponte de Cinta em V 205.
+            # Cada atividade alimenta o mesmo conjunto correspondente de
+            # serralheria (2 quadros + 2 ferros com grapas + 2 com grapas/ganchos).
             codigo_item = item.get('codigo_base', '')
             if (
-                codigo_item == 'P11'
+                codigo_item in ['P11', 'C03']
                 or ("PONTE" in nome_upper and "105" in nome_upper and "30" in nome_upper)
+                or ("PONTE DE CINTA" in nome_upper and "100" in nome_upper)
             ) and not is_nome_piso:
                 qtd_ponte_105 += 1
 
