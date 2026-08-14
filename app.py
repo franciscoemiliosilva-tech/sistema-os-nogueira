@@ -344,6 +344,7 @@ if arquivos_excel and arquivos_csv_3d:
         dataframes_3d = []
         resumo_projetos = []
         total_duplicados_suspeitos = 0
+        detalhes_duplicados = []
 
         def extrair_cliente_projeto(df_csv, nome_arquivo):
             cliente_csv, projeto_csv = "", ""
@@ -421,6 +422,16 @@ if arquivos_excel and arquivos_csv_3d:
             total_duplicados_suspeitos += qtd_dup
 
             cliente_csv, projeto_csv = extrair_cliente_projeto(df_csv, arquivo_csv_3d.name)
+
+            # Guarda as linhas suspeitas para a auditoria detalhada.
+            # Nenhuma delas e removida automaticamente.
+            if qtd_dup > 0:
+                cols_dup = ['Name', 'Material', 'Width', 'Length', 'Height', 'PosX', 'PosY', 'PosZ']
+                dup_df = df_csv.loc[duplicados_mask, cols_dup].copy()
+                dup_df.insert(0, 'PV', projeto_csv)
+                dup_df.insert(1, 'Cliente', cliente_csv)
+                dup_df.insert(2, 'Arquivo', arquivo_csv_3d.name)
+                detalhes_duplicados.append(dup_df)
             df_csv['_arquivo_origem'] = arquivo_csv_3d.name
             df_csv['_cliente_origem'] = cliente_csv
             df_csv['_projeto_origem'] = projeto_csv
@@ -851,7 +862,22 @@ if arquivos_excel and arquivos_csv_3d:
         qtd_curva_360 = 0
         if "ROTTO BRASIL" in relatorio and 'agregados' in relatorio["ROTTO BRASIL"]:
             for chave, qtd in relatorio["ROTTO BRASIL"]['agregados'].items():
-                if "CURVA" in chave[0].upper(): qtd_curva_360 += qtd
+                if "CURVA" in chave[0].upper():
+                    qtd_curva_360 += qtd
+
+        # Regra de serralheria validada para os quadros de curva 360:
+        # cada TELEFONE A20 presente DIRETAMENTE no 3D gera 2 quadros;
+        # cada TUBO RETO A21 presente DIRETAMENTE no 3D gera 2 quadros.
+        # O A21 criado como filho da composicao do TELEFONE nao entra nesta conta.
+        qtd_telefone_direto = sum(
+            qtd for (cod, _cor), qtd in contagem_codigos_oficiais.items() if cod == 'A20'
+        )
+        qtd_tubo_reto_direto = sum(
+            qtd for (cod, _cor), qtd in contagem_codigos_oficiais.items() if cod == 'A21'
+        )
+        qtd_quadros_curva_360 = int(round(
+            (qtd_telefone_direto * 2) + (qtd_tubo_reto_direto * 2)
+        ))
 
         # (5) FIXOS, SERRALHERIA E ESTOQUE
         if "IMPRESSÃO" not in relatorio: relatorio["IMPRESSÃO"] = {}
@@ -867,9 +893,12 @@ if arquivos_excel and arquivos_csv_3d:
         elif 7 <= qtd_curva_360 <= 9: qtd_chifres = 3
         elif qtd_curva_360 >= 10: qtd_chifres = 4
         
-        if qtd_chifres > 0: relatorio["SERRALHERIA"]['agregados'][("Chifre suporte do 360°", "", "")] = qtd_chifres
-        if qtd_curva_360 > 0: relatorio["SERRALHERIA"]['agregados'][("Quadro de curva 360°", "", "")] = 1
-        if qtd_turbilhao > 0: relatorio["SERRALHERIA"]['agregados'][("Quadro de Turbilhão", "", "")] = qtd_turbilhao * 2
+        if qtd_chifres > 0:
+            relatorio["SERRALHERIA"]['agregados'][("Chifre suporte do 360°", "", "")] = qtd_chifres
+        if qtd_quadros_curva_360 > 0:
+            relatorio["SERRALHERIA"]['agregados'][("Quadro de curva 360°", "", "")] = qtd_quadros_curva_360
+        if qtd_turbilhao > 0:
+            relatorio["SERRALHERIA"]['agregados'][("Quadro de Turbilhão", "", "")] = qtd_turbilhao * 2
             
         if qtd_ponte_105 > 0:
             relatorio["SERRALHERIA"]['agregados'][('Quadro ponte em "v" 98 x 75 cm', "", "")] = qtd_ponte_105 * 2
@@ -1052,6 +1081,13 @@ if arquivos_excel and arquivos_csv_3d:
                             cor_final = cor_peca.title()
                             
                     nome_final_mat = mat['material'].strip().title().replace('X', 'x')
+
+                    # Quadro de curva 360 e item de SERRALHERIA, nao de compras.
+                    # A quantidade e calculada explicitamente a partir dos A20/A21
+                    # diretos do 3D, portanto ignoramos este item na explosao da composicao.
+                    nome_mat_sem_acentos = normalizar_nome_cruzamento(nome_mat)
+                    if 'QUADRO DE CURVA 360' in nome_mat_sem_acentos:
+                        continue
 
                     # Se este item da receita ja foi reconhecido como uma peca
                     # oficial e promovido para ROTTO BRASIL (ou e auto-referencia
@@ -1337,11 +1373,42 @@ if arquivos_excel and arquivos_csv_3d:
 
         st.markdown("---")
         st.subheader("⚠️ Auditoria 3D")
+
+        if total_duplicados_suspeitos > 0 and detalhes_duplicados:
+            df_dup_auditoria = pd.concat(detalhes_duplicados, ignore_index=True)
+
+            def nome_amigavel_auditoria(nome_3d):
+                nome_original_aud = str(nome_3d).strip().upper()
+                for chv_conexao, nome_padrao in banco_dados_seguro.items():
+                    if chv_conexao in nome_original_aud:
+                        return banco_dados.get(chv_conexao, {}).get('nome', nome_padrao)
+                match_aud = re.match(r'^([A-Z][0-9O]{2})', nome_original_aud)
+                if match_aud:
+                    cod_aud = match_aud.group(1).replace('O', '0')
+                    if cod_aud in banco_dados:
+                        return padronizar_medidas_maior_menor(banco_dados[cod_aud].get('nome', nome_original_aud))
+                return nome_original_aud
+
+            df_dup_auditoria.insert(3, 'Peça identificada', df_dup_auditoria['Name'].map(nome_amigavel_auditoria))
+            df_dup_auditoria = df_dup_auditoria.rename(columns={
+                'Name': 'Código 3D', 'Material': 'Cor/Material',
+                'Width': 'Largura', 'Length': 'Comprimento', 'Height': 'Altura',
+                'PosX': 'PosX', 'PosY': 'PosY', 'PosZ': 'PosZ'
+            })
+
+            st.warning(
+                f"Foram encontradas {total_duplicados_suspeitos} linhas potencialmente duplicadas/sobrepostas. "
+                "Confira as peças abaixo. Nenhuma linha foi removida automaticamente."
+            )
+            with st.expander("🔎 Ver peças potencialmente duplicadas/sobrepostas", expanded=False):
+                st.dataframe(df_dup_auditoria, use_container_width=True, hide_index=True)
+
         if lista_auditoria:
             st.warning("⚠️ Os seguintes itens vieram com 'Material' ou 'Sem Cor'. Verifique o 3D antes da produção:")
-            for item_sem_cor in sorted(list(set(lista_auditoria))): st.markdown(f"- {item_sem_cor}")
-        else:
-            st.success("Tudo perfeito! 100% dos blocos com cores definidas e integrados com a produção.")
+            for item_sem_cor in sorted(list(set(lista_auditoria))):
+                st.markdown(f"- {item_sem_cor}")
+        elif total_duplicados_suspeitos == 0:
+            st.success("Tudo perfeito! 100% dos blocos com cores definidas e sem sobreposições suspeitas.")
 
     except Exception as e:
         st.error(f"Erro no processamento: {e}")
